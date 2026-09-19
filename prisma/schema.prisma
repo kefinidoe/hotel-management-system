@@ -103,6 +103,7 @@ model Guest {
   nationality         String?
   vehicleRegistration String?
   notes               String?
+  isArchived          Boolean  @default(false) // hidden from the active guest list, but never deleted -- folios/payments/reservations stay intact forever
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
