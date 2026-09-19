@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: "Inter", system-ui, sans-serif;
+  }
+  body {
+    @apply bg-bg text-text-primary antialiased;
+  }
+  h1 { @apply text-2xl font-semibold tracking-tight; }
+  h2 { @apply text-lg font-semibold tracking-tight; }
+  h3 { @apply text-base font-semibold; }
+}
+
+@layer components {
+  /* Reusable card surface used across every module */
+  .card {
+    @apply bg-surface border border-border rounded-card shadow-card p-6;
+  }
+
+  /* Primary button — used for the single most important action on a screen */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-control bg-primary-500
+           px-4 py-2.5 text-sm font-medium text-white transition-colors
+           hover:bg-primary-600 disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-control border border-border
+           bg-surface px-4 py-2.5 text-sm font-medium text-text-primary transition-colors
+           hover:bg-primary-50 disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .kpi-value {
+    @apply text-3xl font-semibold tracking-tight text-text-primary;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+  .badge-available   { @apply badge bg-primary-50 text-primary-700; }
+  .badge-occupied    { @apply badge bg-champagne-50 text-champagne-500; }
+  .badge-maintenance { @apply badge bg-danger/10 text-danger; }
+  .badge-cleaning    { @apply badge bg-info/10 text-info; }
+}
