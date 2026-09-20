@@ -8,17 +8,21 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q")?.trim();
+  const includeArchived = searchParams.get("includeArchived") === "true";
 
   const guests = await prisma.guest.findMany({
-    where: q
-      ? {
-          OR: [
-            { fullName: { contains: q, mode: "insensitive" } },
-            { phone: { contains: q, mode: "insensitive" } },
-            { email: { contains: q, mode: "insensitive" } },
-          ],
-        }
-      : undefined,
+    where: {
+      isArchived: includeArchived ? undefined : false,
+      ...(q
+        ? {
+            OR: [
+              { fullName: { contains: q, mode: "insensitive" } },
+              { phone: { contains: q, mode: "insensitive" } },
+              { email: { contains: q, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    },
     orderBy: { createdAt: "desc" },
     take: 100,
     include: {
@@ -36,6 +40,7 @@ export async function GET(req: Request) {
       fullName: g.fullName,
       phone: g.phone,
       email: g.email,
+      isArchived: g.isArchived,
       currentRoom: g.reservations[0]?.rooms[0]?.room.number ?? null,
       lastStatus: g.reservations[0]?.status ?? null,
       checkInDate: g.reservations[0]?.checkInDate.toISOString() ?? null,

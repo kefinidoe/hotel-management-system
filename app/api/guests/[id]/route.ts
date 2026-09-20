@@ -31,6 +31,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     nationality: guest.nationality,
     vehicleRegistration: guest.vehicleRegistration,
     notes: guest.notes,
+    isArchived: guest.isArchived,
     reservations: guest.reservations.map((r) => ({
       id: r.id,
       code: r.code,
@@ -51,4 +52,37 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       };
     }),
   });
+}
+
+// Archive or restore a guest. This NEVER deletes anything — it only flips a
+// flag that hides the guest from the default list. Their reservations,
+// folios, and payments are untouched either way, forever.
+export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
+  const body = await req.json();
+  if (typeof body.isArchived !== "boolean") {
+    return NextResponse.json({ error: "isArchived (true or false) is required." }, { status: 400 });
+  }
+
+  // Guard: don't allow archiving a guest who is currently checked in.
+  if (body.isArchived) {
+    const activeStay = await prisma.reservation.findFirst({
+      where: { guestId: params.id, status: "CHECKED_IN" },
+    });
+    if (activeStay) {
+      return NextResponse.json(
+        { error: "This guest is currently checked in and can't be archived." },
+        { status: 400 }
+      );
+    }
+  }
+
+  const guest = await prisma.guest.update({
+    where: { id: params.id },
+    data: { isArchived: body.isArchived },
+  });
+
+  return NextResponse.json({ id: guest.id, isArchived: guest.isArchived });
 }
