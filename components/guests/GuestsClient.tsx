@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Search, X } from "lucide-react";
+import { Search, X, Archive, RotateCcw } from "lucide-react";
 
 type GuestRow = {
   id: string;
   fullName: string;
   phone: string | null;
   email: string | null;
+  isArchived: boolean;
   currentRoom: string | null;
   lastStatus: string | null;
   checkInDate: string | null;
@@ -23,6 +24,7 @@ type GuestDetail = {
   nationality: string | null;
   vehicleRegistration: string | null;
   notes: string | null;
+  isArchived: boolean;
   reservations: {
     id: string;
     code: string;
@@ -37,13 +39,23 @@ type GuestDetail = {
 export default function GuestsClient({ initialGuests }: { initialGuests: GuestRow[] }) {
   const [guests, setGuests] = useState(initialGuests);
   const [query, setQuery] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<GuestDetail | null>(null);
+  const [archiving, setArchiving] = useState(false);
 
-  async function search(q: string) {
+  async function search(q: string, includeArchived = showArchived) {
     setQuery(q);
-    const res = await fetch(`/api/guests?q=${encodeURIComponent(q)}`);
+    const params = new URLSearchParams({ q });
+    if (includeArchived) params.set("includeArchived", "true");
+    const res = await fetch(`/api/guests?${params.toString()}`);
     setGuests(await res.json());
+  }
+
+  function toggleShowArchived() {
+    const next = !showArchived;
+    setShowArchived(next);
+    search(query, next);
   }
 
   async function openGuest(id: string) {
@@ -53,6 +65,28 @@ export default function GuestsClient({ initialGuests }: { initialGuests: GuestRo
     setDetail(await res.json());
   }
 
+  async function setArchived(id: string, isArchived: boolean) {
+    if (isArchived && !confirm("Archive this guest? They'll be hidden from the list, but all their stay and payment history stays intact and can be restored anytime.")) {
+      return;
+    }
+    setArchiving(true);
+    const res = await fetch(`/api/guests/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isArchived }),
+    });
+    setArchiving(false);
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      alert(body.error ?? "Something went wrong.");
+      return;
+    }
+
+    setDetail((d) => (d ? { ...d, isArchived } : d));
+    search(query); // refresh the list so it reflects the change
+  }
+
   return (
     <div>
       <h1>Guests</h1>
@@ -60,15 +94,21 @@ export default function GuestsClient({ initialGuests }: { initialGuests: GuestRo
         Search by name, phone, or email.
       </p>
 
-      <div className="relative max-w-md mb-4">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-        <input
-          value={query}
-          onChange={(e) => search(e.target.value)}
-          placeholder="Search guests..."
-          className="w-full rounded-control border border-border bg-surface pl-9 pr-3 py-2.5 text-sm
-                     focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-        />
+      <div className="flex items-center gap-4 mb-4">
+        <div className="relative max-w-md flex-1">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+          <input
+            value={query}
+            onChange={(e) => search(e.target.value)}
+            placeholder="Search guests..."
+            className="w-full rounded-control border border-border bg-surface pl-9 pr-3 py-2.5 text-sm
+                       focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+          />
+        </div>
+        <label className="flex items-center gap-2 text-sm text-text-secondary whitespace-nowrap">
+          <input type="checkbox" checked={showArchived} onChange={toggleShowArchived} />
+          Show archived
+        </label>
       </div>
 
       <div className="card p-0 overflow-x-auto">
@@ -88,7 +128,14 @@ export default function GuestsClient({ initialGuests }: { initialGuests: GuestRo
                 onClick={() => openGuest(g.id)}
                 className="border-b border-border last:border-0 cursor-pointer hover:bg-primary-50/40"
               >
-                <td className="p-3 font-medium">{g.fullName}</td>
+                <td className="p-3 font-medium">
+                  {g.fullName}
+                  {g.isArchived && (
+                    <span className="ml-2 text-xs text-text-muted border border-border rounded px-1.5 py-0.5">
+                      Archived
+                    </span>
+                  )}
+                </td>
                 <td className="p-3 text-text-secondary">{g.phone ?? "—"}</td>
                 <td className="p-3 text-text-secondary">{g.currentRoom ?? "—"}</td>
                 <td className="p-3 text-text-secondary">{g.lastStatus?.replace("_", " ") ?? "—"}</td>
@@ -165,6 +212,31 @@ export default function GuestsClient({ initialGuests }: { initialGuests: GuestRo
                       <p className="text-sm text-text-secondary">No billing history yet.</p>
                     )}
                   </div>
+                </div>
+
+                <div className="pt-2 border-t border-border">
+                  {detail.isArchived ? (
+                    <button
+                      onClick={() => setArchived(detail.id, false)}
+                      disabled={archiving}
+                      className="flex items-center gap-2 text-sm text-primary-600 hover:text-primary-700 disabled:opacity-50"
+                    >
+                      <RotateCcw size={16} /> Restore guest
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setArchived(detail.id, true)}
+                      disabled={archiving || detail.reservations.some((r) => r.status === "CHECKED_IN")}
+                      className="flex items-center gap-2 text-sm text-danger hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title={
+                        detail.reservations.some((r) => r.status === "CHECKED_IN")
+                          ? "Can't archive a guest who is currently checked in"
+                          : undefined
+                      }
+                    >
+                      <Archive size={16} /> Archive guest
+                    </button>
+                  )}
                 </div>
               </div>
             )}

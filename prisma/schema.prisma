@@ -42,6 +42,9 @@ model User {
   maintenanceTickets  MaintenanceTicket[] @relation("MaintenanceAssignee")
   auditLogs           AuditLog[]
   expensesRequested   Expense[]          @relation("ExpenseRequestedBy")
+  purchasesRecorded   Purchase[]         @relation("PurchaseCreatedBy")
+  wastagesRecorded    Wastage[]          @relation("WastageRecordedBy")
+  stockMovements      StockMovement[]    @relation("StockMovementUser")
 }
 
 // ---------- Rooms ----------
@@ -291,6 +294,8 @@ model MenuItem {
   name       String
   price      Decimal      @db.Decimal(10, 2)
   isActive   Boolean      @default(true)
+
+  recipe Recipe?
 }
 
 // ---------- Restaurant orders ----------
@@ -327,16 +332,113 @@ model OrderItem {
 
 // ---------- Inventory ----------
 
+// Every item is tracked internally in one fixed base unit so the recipe
+// engine never has to guess a conversion: weight items in grams, liquid
+// items in millilitres, countable items in pieces. Display formatting
+// (e.g. showing "2.0 kg" instead of "2000 g") happens in the UI layer,
+// see lib/inventory.ts.
 model InventoryItem {
   id            String   @id @default(uuid())
   sku           String   @unique
   name          String
   category      String
-  unit          String
-  currentStock  Decimal  @db.Decimal(10, 2) @default(0)
-  reorderLevel  Decimal  @db.Decimal(10, 2) @default(0)
+  unit          String   // base unit: "g" | "ml" | "pcs"
+  currentStock  Decimal  @db.Decimal(12, 2) @default(0)
+  reorderLevel  Decimal  @db.Decimal(12, 2) @default(0)
+  costPerUnit   Decimal  @db.Decimal(10, 4) @default(0) // cost per base unit, e.g. cost per gram
+  supplier      String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  recipeIngredients RecipeIngredient[]
+  stockMovements    StockMovement[]
+  purchases         Purchase[]
+  wastages          Wastage[]
+}
+
+// A recipe is the ingredient list behind one restaurant menu item.
+// portions lets an ingredient list describe a batch (e.g. this list of
+// ingredients makes 4 portions) rather than forcing everything to 1.
+model Recipe {
+  id         String   @id @default(uuid())
+  menuItemId String   @unique
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  portions   Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  ingredients RecipeIngredient[]
+}
+
+model RecipeIngredient {
+  id              String        @id @default(uuid())
+  recipeId        String
+  recipe          Recipe        @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  quantity        Decimal       @db.Decimal(10, 2) // in the inventory item's base unit, per portions
+
+  @@unique([recipeId, inventoryItemId])
+}
+
+enum StockMovementType {
+  PURCHASE
+  MEAL_SALE
+  WASTAGE
+  ADJUSTMENT
+  OPENING_BALANCE
+}
+
+// Every single change to stock -- up or down -- is logged here, so the
+// current stock figure is always explainable after the fact.
+model StockMovement {
+  id              String            @id @default(uuid())
+  inventoryItemId String
+  inventoryItem   InventoryItem     @relation(fields: [inventoryItemId], references: [id])
+  type            StockMovementType
+  quantity        Decimal           @db.Decimal(12, 2) // signed: negative = consumed/removed, positive = added
+  beforeQty       Decimal           @db.Decimal(12, 2)
+  afterQty        Decimal           @db.Decimal(12, 2)
+  reference       String?           // e.g. "Order #1042", "Invoice INV-2210"
+  userId          String?
+  user            User?             @relation("StockMovementUser", fields: [userId], references: [id])
+  createdAt       DateTime          @default(now())
+}
+
+model Purchase {
+  id              String        @id @default(uuid())
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  supplier        String
+  invoiceNumber   String?
+  quantity        Decimal       @db.Decimal(12, 2) // in the item's base unit
+  unitCost        Decimal       @db.Decimal(10, 4) // cost per base unit
+  totalCost       Decimal       @db.Decimal(10, 2)
+  purchaseDate    DateTime      @default(now())
+  createdById     String
+  createdBy       User          @relation("PurchaseCreatedBy", fields: [createdById], references: [id])
+  createdAt       DateTime      @default(now())
+}
+
+enum WastageReason {
+  SPOILAGE
+  EXPIRED
+  BURNT
+  DAMAGED
+  PREP_WASTE
+  OTHER
+}
+
+model Wastage {
+  id              String        @id @default(uuid())
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  quantity        Decimal       @db.Decimal(12, 2) // in the item's base unit
+  reason          WastageReason
+  department      String?
+  recordedById    String
+  recordedBy      User          @relation("WastageRecordedBy", fields: [recordedById], references: [id])
+  createdAt       DateTime      @default(now())
 }
 
 // ---------- Expenses ----------

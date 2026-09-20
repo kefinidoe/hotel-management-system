@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function GuestsPage() {
   const guests = await prisma.guest.findMany({
+    where: { isArchived: false },
     orderBy: { createdAt: "desc" },
     take: 100,
     include: {
@@ -21,6 +22,7 @@ export default async function GuestsPage() {
     fullName: g.fullName,
     phone: g.phone,
     email: g.email,
+    isArchived: g.isArchived,
     currentRoom: g.reservations[0]?.rooms[0]?.room.number ?? null,
     lastStatus: g.reservations[0]?.status ?? null,
     checkInDate: g.reservations[0]?.checkInDate.toISOString() ?? null,
