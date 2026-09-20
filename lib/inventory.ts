@@ -3,6 +3,9 @@
 // so the recipe engine never has to guess at a conversion. These helpers
 // only handle turning that base-unit number into something readable.
 
+import type { Prisma } from "@prisma/client";
+import type { CartLine } from "@/lib/restaurant";
+
 export type BaseUnit = "g" | "ml" | "pcs";
 
 /** Human-friendly display of a base-unit quantity, e.g. 2000 "g" -> "2.0 kg". */
@@ -75,4 +78,76 @@ export function computeAvailablePortions(
 
   if (!isFinite(minPortions)) return { portions: 0, limitingItem: null };
   return { portions: Math.max(0, minPortions), limitingItem };
+}
+
+type TxClient = Prisma.TransactionClient;
+
+/**
+ * Deducts recipe ingredients for every cart line whose menu item has a
+ * recipe attached. Items with no recipe are skipped -- treated as always
+ * available (e.g. a bottled drink you haven't linked to inventory yet).
+ *
+ * Must be called INSIDE the same transaction as the folio/payment writes:
+ * if stock is insufficient, this throws and the whole order rolls back
+ * together -- never a paid order with no stock deducted, or a deduction
+ * with no matching sale.
+ */
+export async function deductRecipeStock(
+  tx: TxClient,
+  lines: CartLine[],
+  reference: string,
+  userId: string
+): Promise<void> {
+  const needed = new Map<string, number>(); // inventoryItemId -> base-unit quantity needed
+
+  for (const line of lines) {
+    if (!line.menuItemId) continue;
+    const recipe = await tx.recipe.findUnique({
+      where: { menuItemId: line.menuItemId },
+      include: { ingredients: true },
+    });
+    if (!recipe) continue; // no recipe defined for this item -- nothing to deduct
+
+    for (const ing of recipe.ingredients) {
+      const perPortion = Number(ing.quantity) / recipe.portions;
+      const total = perPortion * line.quantity;
+      needed.set(ing.inventoryItemId, (needed.get(ing.inventoryItemId) ?? 0) + total);
+    }
+  }
+
+  if (needed.size === 0) return;
+
+  const items = await tx.inventoryItem.findMany({ where: { id: { in: [...needed.keys()] } } });
+  const itemById = new Map(items.map((i) => [i.id, i]));
+
+  // Check everything first, before writing anything.
+  for (const [itemId, qty] of needed) {
+    const item = itemById.get(itemId);
+    if (!item) throw new Error("An ingredient used by this order no longer exists in inventory.");
+    if (Number(item.currentStock) < qty) {
+      throw new Error(
+        `Not enough "${item.name}" in stock to complete this order (need ${qty.toFixed(1)} ${item.unit}, have ${Number(item.currentStock).toFixed(1)} ${item.unit}).`
+      );
+    }
+  }
+
+  // Now apply.
+  for (const [itemId, qty] of needed) {
+    const item = itemById.get(itemId)!;
+    const before = Number(item.currentStock);
+    const after = before - qty;
+
+    await tx.inventoryItem.update({ where: { id: itemId }, data: { currentStock: after } });
+    await tx.stockMovement.create({
+      data: {
+        inventoryItemId: itemId,
+        type: "MEAL_SALE",
+        quantity: -qty,
+        beforeQty: before,
+        afterQty: after,
+        reference,
+        userId,
+      },
+    });
+  }
 }

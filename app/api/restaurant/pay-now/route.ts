@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { readCart, round2, cartTotal } from "@/lib/restaurant";
+import { deductRecipeStock } from "@/lib/inventory";
 
 const WALK_IN_GUEST = "Walk-in Guest";
 
@@ -32,51 +33,57 @@ export async function POST(req: Request) {
   const prefix = tableNumber ? `Restaurant (Table ${tableNumber})` : "Restaurant";
   const total = cartTotal(lines, vatRate);
 
-  const result = await prisma.$transaction(async (tx) => {
-    let guest = customerPhone
-      ? await tx.guest.findFirst({ where: { phone: customerPhone } })
-      : null;
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      let guest = customerPhone
+        ? await tx.guest.findFirst({ where: { phone: customerPhone } })
+        : null;
 
-    if (!guest && customerName) {
-      guest = await tx.guest.create({
-        data: { fullName: customerName, phone: customerPhone || null },
-      });
-    }
-    if (!guest) {
-      guest =
-        (await tx.guest.findFirst({ where: { fullName: WALK_IN_GUEST } })) ??
-        (await tx.guest.create({ data: { fullName: WALK_IN_GUEST } }));
-    }
+      if (!guest && customerName) {
+        guest = await tx.guest.create({
+          data: { fullName: customerName, phone: customerPhone || null },
+        });
+      }
+      if (!guest) {
+        guest =
+          (await tx.guest.findFirst({ where: { fullName: WALK_IN_GUEST } })) ??
+          (await tx.guest.create({ data: { fullName: WALK_IN_GUEST } }));
+      }
 
-    const folio = await tx.folio.create({ data: { guestId: guest.id, isClosed: true } });
+      const folio = await tx.folio.create({ data: { guestId: guest.id, isClosed: true } });
 
-    for (const line of lines) {
-      await tx.folioItem.create({
+      for (const line of lines) {
+        await tx.folioItem.create({
+          data: {
+            folioId: folio.id,
+            type: "RESTAURANT",
+            description: `${prefix} — ${line.name}`,
+            quantity: line.quantity,
+            unitPrice: line.unitPrice,
+            taxRate: vatRate,
+            total: round2(line.quantity * line.unitPrice * (1 + vatRate / 100)),
+          },
+        });
+      }
+
+      await tx.payment.create({
         data: {
           folioId: folio.id,
-          type: "RESTAURANT",
-          description: `${prefix} — ${line.name}`,
-          quantity: line.quantity,
-          unitPrice: line.unitPrice,
-          taxRate: vatRate,
-          total: round2(line.quantity * line.unitPrice * (1 + vatRate / 100)),
+          paymentMethodId,
+          amount: total,
+          reference: reference || null,
+          status: "COMPLETED",
+          cashierId: session.user.id,
         },
       });
-    }
 
-    await tx.payment.create({
-      data: {
-        folioId: folio.id,
-        paymentMethodId,
-        amount: total,
-        reference: reference || null,
-        status: "COMPLETED",
-        cashierId: session.user.id,
-      },
+      await deductRecipeStock(tx, lines, `Sold to ${guest.fullName}`, session.user.id);
+
+      return { guestName: guest.fullName, folioId: folio.id };
     });
 
-    return { guestName: guest.fullName, folioId: folio.id };
-  });
-
-  return NextResponse.json({ ok: true, ...result, total, method: method.name }, { status: 201 });
+    return NextResponse.json({ ok: true, ...result, total, method: method.name }, { status: 201 });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message || "Could not complete the order." }, { status: 400 });
+  }
 }

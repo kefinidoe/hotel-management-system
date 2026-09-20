@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { readCart, round2, cartTotal } from "@/lib/restaurant";
+import { deductRecipeStock } from "@/lib/inventory";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -36,21 +37,27 @@ export async function POST(req: Request) {
   const prefix = tableNumber ? `Restaurant (Table ${tableNumber})` : "Restaurant";
   const total = cartTotal(lines, vatRate);
 
-  await prisma.$transaction(async (tx) => {
-    for (const line of lines) {
-      await tx.folioItem.create({
-        data: {
-          folioId: folio.id,
-          type: "RESTAURANT",
-          description: `${prefix} — ${line.name}`,
-          quantity: line.quantity,
-          unitPrice: line.unitPrice,
-          taxRate: vatRate,
-          total: round2(line.quantity * line.unitPrice * (1 + vatRate / 100)),
-        },
-      });
-    }
-  });
+  try {
+    await prisma.$transaction(async (tx) => {
+      for (const line of lines) {
+        await tx.folioItem.create({
+          data: {
+            folioId: folio.id,
+            type: "RESTAURANT",
+            description: `${prefix} — ${line.name}`,
+            quantity: line.quantity,
+            unitPrice: line.unitPrice,
+            taxRate: vatRate,
+            total: round2(line.quantity * line.unitPrice * (1 + vatRate / 100)),
+          },
+        });
+      }
+
+      await deductRecipeStock(tx, lines, `Charged to ${folio.guest.fullName}`, session.user.id);
+    });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message || "Could not complete the order." }, { status: 400 });
+  }
 
   return NextResponse.json(
     { ok: true, guestName: folio.guest.fullName, total },
