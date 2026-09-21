@@ -1,11 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Plus, ShoppingBag, X } from "lucide-react";
-import clsx from "clsx";
+import { useMemo, useState } from "react";
+import { Package, Wallet, AlertTriangle, XCircle, TrendingDown, TrendingUp, Plus, Search } from "lucide-react";
+import { formatQty, STOCK_STATUS_LABEL, STOCK_STATUS_BADGE_CLASS, type StockStatus } from "@/lib/inventory";
+import RecipesTab from "./RecipesTab";
+import PurchasesTab from "./PurchasesTab";
+import WastageTab from "./WastageTab";
+import MovementsTab from "./MovementsTab";
+import AddItemModal from "./AddItemModal";
+import AdjustStockModal from "./AdjustStockModal";
 
-type Item = {
+export type InventoryItemRow = {
   id: string;
   sku: string;
   name: string;
@@ -13,477 +18,202 @@ type Item = {
   unit: string;
   currentStock: number;
   reorderLevel: number;
-  unitCost: number | null;
-};
-type PendingOrder = {
-  id: string;
-  itemName: string;
-  unit: string;
+  costPerUnit: number;
   supplier: string | null;
-  quantity: number;
-  orderedAt: string;
+  stockValue: number;
+  status: StockStatus;
 };
 
-function inputClass() {
-  return "w-full rounded-control border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent";
-}
-function money(n: number) {
-  return `KSh ${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-}
+type Kpis = {
+  totalItems: number;
+  totalValue: number;
+  lowStock: number;
+  outOfStock: number;
+  todaysConsumption: number;
+  todaysPurchases: number;
+};
+
+const TABS = ["Stock Overview", "Recipes", "Purchases", "Wastage", "Stock Movements"] as const;
+type Tab = (typeof TABS)[number];
 
 export default function InventoryClient({
   initialItems,
-  pendingOrders,
+  kpis,
 }: {
-  initialItems: Item[];
-  pendingOrders: PendingOrder[];
+  initialItems: InventoryItemRow[];
+  kpis: Kpis;
 }) {
-  const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
+  const [items, setItems] = useState(initialItems);
+  const [tab, setTab] = useState<Tab>("Stock Overview");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | StockStatus>("ALL");
   const [addOpen, setAddOpen] = useState(false);
-  const [poOpen, setPoOpen] = useState(false);
-  const [selected, setSelected] = useState<Item | null>(null);
+  const [adjustItem, setAdjustItem] = useState<InventoryItemRow | null>(null);
 
-  function refresh() {
-    router.refresh();
+  const filtered = useMemo(() => {
+    return items.filter((i) => {
+      const matchesSearch =
+        !search ||
+        i.name.toLowerCase().includes(search.toLowerCase()) ||
+        i.sku.toLowerCase().includes(search.toLowerCase()) ||
+        i.category.toLowerCase().includes(search.toLowerCase());
+      const matchesStatus = statusFilter === "ALL" || i.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [items, search, statusFilter]);
+
+  function refreshItems() {
+    fetch("/api/inventory")
+      .then((r) => r.json())
+      .then(setItems);
   }
 
-  const totalItems = initialItems.length;
-  const lowStock = initialItems.filter((i) => i.currentStock <= i.reorderLevel);
-  const stockValue = initialItems.reduce((s, i) => s + i.currentStock * (i.unitCost ?? 0), 0);
-
-  const kpis = [
-    { label: "Total Items", value: String(totalItems) },
-    { label: "Low Stock", value: String(lowStock.length) },
-    { label: "Stock Value", value: money(stockValue) },
-    { label: "Pending Purchases", value: String(pendingOrders.length) },
+  const kpiCards = [
+    { label: "Total Inventory Items", value: kpis.totalItems.toLocaleString(), icon: Package },
+    { label: "Total Inventory Value", value: `KSh ${kpis.totalValue.toLocaleString()}`, icon: Wallet },
+    { label: "Low Stock Items", value: kpis.lowStock.toLocaleString(), icon: AlertTriangle },
+    { label: "Out of Stock", value: kpis.outOfStock.toLocaleString(), icon: XCircle },
+    { label: "Today's Consumption", value: kpis.todaysConsumption.toLocaleString(), icon: TrendingDown },
+    { label: "Today's Purchases", value: kpis.todaysPurchases.toLocaleString(), icon: TrendingUp },
   ];
-
-  async function receiveOrder(id: string) {
-    setError(null);
-    const res = await fetch(`/api/purchase-orders/${id}/receive`, { method: "POST" });
-    if (!res.ok) {
-      const d = await res.json();
-      setError(d.error || "Could not receive this order.");
-      return;
-    }
-    refresh();
-  }
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1>Inventory</h1>
-          <p className="text-text-secondary text-sm mt-1">Stock levels across the hotel.</p>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={() => setPoOpen(true)} className="btn-secondary">
-            <ShoppingBag size={16} /> New Purchase Order
-          </button>
-          <button onClick={() => setAddOpen(true)} className="btn-primary">
-            <Plus size={16} /> Receive Stock
-          </button>
-        </div>
-      </div>
+      <h1>Inventory Management</h1>
+      <p className="text-text-secondary text-sm mt-1 mb-6">
+        Monitor stock, ingredient consumption, recipes, purchases and kitchen usage in real time.
+      </p>
 
-      {error && (
-        <p className="text-sm text-danger bg-danger/5 border border-danger/20 rounded-control px-3 py-2 mb-4">
-          {error}
-        </p>
-      )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {kpis.map((k) => (
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        {kpiCards.map((k) => (
           <div key={k.label} className="card">
-            <p className="text-sm text-text-secondary">{k.label}</p>
-            <p className="kpi-value mt-1">{k.value}</p>
+            <k.icon size={18} className="text-primary-500" strokeWidth={1.8} />
+            <p className="kpi-value mt-2 text-2xl">{k.value}</p>
+            <p className="text-xs text-text-secondary mt-1">{k.label}</p>
           </div>
         ))}
       </div>
 
-      <div className="card p-0 overflow-x-auto mb-6">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-text-muted text-xs uppercase border-b border-border">
-              <th className="p-3 font-medium">SKU</th>
-              <th className="p-3 font-medium">Item</th>
-              <th className="p-3 font-medium">Category</th>
-              <th className="p-3 font-medium">Stock</th>
-              <th className="p-3 font-medium">Unit</th>
-              <th className="p-3 font-medium">Reorder Level</th>
-              <th className="p-3 font-medium">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {initialItems.map((i) => {
-              const low = i.currentStock <= i.reorderLevel;
-              return (
-                <tr
-                  key={i.id}
-                  onClick={() => setSelected(i)}
-                  className="border-b border-border last:border-0 cursor-pointer hover:bg-primary-50/40"
-                >
-                  <td className="p-3 text-text-secondary">{i.sku}</td>
-                  <td className="p-3 font-medium">{i.name}</td>
-                  <td className="p-3 text-text-secondary">{i.category}</td>
-                  <td className="p-3">{i.currentStock}</td>
-                  <td className="p-3 text-text-secondary">{i.unit}</td>
-                  <td className="p-3 text-text-secondary">{i.reorderLevel}</td>
-                  <td className="p-3">
-                    <span className={clsx("badge", low ? "bg-danger/10 text-danger" : "bg-primary-50 text-primary-700")}>
-                      {low ? "Low Stock" : "OK"}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-            {initialItems.length === 0 && (
-              <tr>
-                <td colSpan={7} className="p-6 text-center text-text-secondary">
-                  No inventory items yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div className="flex items-center gap-1 border-b border-border mt-6 mb-4 overflow-x-auto">
+        {TABS.map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors ${
+              tab === t
+                ? "border-primary-500 text-primary-700"
+                : "border-transparent text-text-secondary hover:text-text-primary"
+            }`}
+          >
+            {t}
+          </button>
+        ))}
       </div>
 
-      <h2 className="mb-3">Pending Purchase Orders ({pendingOrders.length})</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {pendingOrders.map((o) => (
-          <div key={o.id} className="card">
-            <p className="font-medium">
-              {o.quantity} {o.unit} — {o.itemName}
-            </p>
-            <p className="text-sm text-text-secondary">{o.supplier || "No supplier noted"}</p>
-            <p className="text-xs text-text-muted mt-1">
-              Ordered {new Date(o.orderedAt).toLocaleDateString()}
-            </p>
-            <button onClick={() => receiveOrder(o.id)} className="btn-primary w-full mt-3">
-              Mark Received
+      {tab === "Stock Overview" && (
+        <div>
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between mb-4">
+            <div className="flex flex-1 gap-2">
+              <div className="relative flex-1 max-w-xs">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search items..."
+                  className="w-full rounded-control border border-border pl-8 pr-3 py-2 text-sm"
+                />
+              </div>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                className="rounded-control border border-border px-3 py-2 text-sm"
+              >
+                <option value="ALL">All statuses</option>
+                <option value="IN_STOCK">In Stock</option>
+                <option value="LOW_STOCK">Low Stock</option>
+                <option value="CRITICAL">Critical</option>
+                <option value="OUT_OF_STOCK">Out of Stock</option>
+              </select>
+            </div>
+            <button onClick={() => setAddOpen(true)} className="btn-primary">
+              <Plus size={16} /> Add Item
             </button>
           </div>
-        ))}
-        {pendingOrders.length === 0 && (
-          <p className="text-sm text-text-secondary">No pending purchase orders.</p>
-        )}
-      </div>
+
+          <div className="card overflow-x-auto p-0">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-text-secondary border-b border-border">
+                  <th className="px-4 py-3 font-medium">Item</th>
+                  <th className="px-4 py-3 font-medium">Category</th>
+                  <th className="px-4 py-3 font-medium">Current Stock</th>
+                  <th className="px-4 py-3 font-medium">Reorder Level</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Stock Value</th>
+                  <th className="px-4 py-3 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((i) => (
+                  <tr key={i.id} className="border-b border-border last:border-0 hover:bg-primary-50/30">
+                    <td className="px-4 py-3">
+                      <p className="font-medium">{i.name}</p>
+                      <p className="text-xs text-text-muted">{i.sku}</p>
+                    </td>
+                    <td className="px-4 py-3 text-text-secondary">{i.category}</td>
+                    <td className="px-4 py-3">{formatQty(i.currentStock, i.unit)}</td>
+                    <td className="px-4 py-3 text-text-secondary">{formatQty(i.reorderLevel, i.unit)}</td>
+                    <td className="px-4 py-3">
+                      <span className={STOCK_STATUS_BADGE_CLASS[i.status]}>{STOCK_STATUS_LABEL[i.status]}</span>
+                    </td>
+                    <td className="px-4 py-3">KSh {i.stockValue.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => setAdjustItem(i)}
+                        className="text-primary-600 text-xs font-medium hover:underline"
+                      >
+                        Adjust
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-text-secondary">
+                      No items match your search.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {tab === "Recipes" && <RecipesTab inventoryItems={items} />}
+      {tab === "Purchases" && <PurchasesTab inventoryItems={items} onChange={refreshItems} />}
+      {tab === "Wastage" && <WastageTab inventoryItems={items} onChange={refreshItems} />}
+      {tab === "Stock Movements" && <MovementsTab />}
 
       {addOpen && (
-        <StockItemsModal
-          items={initialItems}
+        <AddItemModal
           onClose={() => setAddOpen(false)}
-          onDone={refresh}
-          onError={setError}
+          onCreated={() => {
+            setAddOpen(false);
+            refreshItems();
+          }}
         />
       )}
-
-      {poOpen && (
-        <NewPurchaseOrderModal
-          items={initialItems}
-          onClose={() => setPoOpen(false)}
-          onDone={refresh}
-          onError={setError}
+      {adjustItem && (
+        <AdjustStockModal
+          item={adjustItem}
+          onClose={() => setAdjustItem(null)}
+          onSaved={() => {
+            setAdjustItem(null);
+            refreshItems();
+          }}
         />
       )}
-
-      {selected && (
-        <ItemActionsModal
-          item={selected}
-          onClose={() => setSelected(null)}
-          onDone={refresh}
-          onError={setError}
-        />
-      )}
-    </div>
-  );
-}
-
-/** Combined entry point: add a brand-new item, or receive/issue/adjust an existing one. */
-function StockItemsModal({
-  items,
-  onClose,
-  onDone,
-  onError,
-}: {
-  items: Item[];
-  onClose: () => void;
-  onDone: () => void;
-  onError: (e: string | null) => void;
-}) {
-  const [sku, setSku] = useState("");
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState("");
-  const [unit, setUnit] = useState("");
-  const [reorderLevel, setReorderLevel] = useState("0");
-  const [unitCost, setUnitCost] = useState("");
-  const [openingStock, setOpeningStock] = useState("0");
-  const [loading, setLoading] = useState(false);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    onError(null);
-    const res = await fetch("/api/inventory", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sku,
-        name,
-        category,
-        unit,
-        reorderLevel: Number(reorderLevel) || 0,
-        unitCost: unitCost ? Number(unitCost) : null,
-        openingStock: Number(openingStock) || 0,
-      }),
-    });
-    setLoading(false);
-    if (!res.ok) {
-      onError((await res.json()).error || "Could not add item.");
-      return;
-    }
-    onDone();
-    onClose();
-  }
-
-  return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4">
-      <div className="card w-full max-w-md">
-        <div className="flex items-center justify-between mb-4">
-          <h2>Add Inventory Item</h2>
-          <button onClick={onClose} className="text-text-secondary hover:text-text-primary">
-            <X size={18} />
-          </button>
-        </div>
-        <form onSubmit={submit} className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium mb-1.5">SKU</label>
-              <input value={sku} onChange={(e) => setSku(e.target.value)} required className={inputClass()} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Category</label>
-              <input value={category} onChange={(e) => setCategory(e.target.value)} required className={inputClass()} />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1.5">Item Name</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} required className={inputClass()} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Unit (e.g. pcs, kg)</label>
-              <input value={unit} onChange={(e) => setUnit(e.target.value)} required className={inputClass()} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Reorder Level</label>
-              <input type="number" value={reorderLevel} onChange={(e) => setReorderLevel(e.target.value)} className={inputClass()} />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Opening Stock</label>
-              <input type="number" value={openingStock} onChange={(e) => setOpeningStock(e.target.value)} className={inputClass()} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Unit Cost (KSh, optional)</label>
-              <input type="number" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} className={inputClass()} />
-            </div>
-          </div>
-          <button type="submit" disabled={loading} className="btn-primary w-full mt-2">
-            {loading ? "Adding..." : "Add Item"}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-function NewPurchaseOrderModal({
-  items,
-  onClose,
-  onDone,
-  onError,
-}: {
-  items: Item[];
-  onClose: () => void;
-  onDone: () => void;
-  onError: (e: string | null) => void;
-}) {
-  const [itemId, setItemId] = useState(items[0]?.id ?? "");
-  const [supplier, setSupplier] = useState("");
-  const [quantity, setQuantity] = useState("");
-  const [unitCost, setUnitCost] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    onError(null);
-    const res = await fetch("/api/purchase-orders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        itemId,
-        supplier,
-        quantity: Number(quantity),
-        unitCost: unitCost ? Number(unitCost) : null,
-      }),
-    });
-    setLoading(false);
-    if (!res.ok) {
-      onError((await res.json()).error || "Could not create purchase order.");
-      return;
-    }
-    onDone();
-    onClose();
-  }
-
-  return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4">
-      <div className="card w-full max-w-md">
-        <div className="flex items-center justify-between mb-4">
-          <h2>New Purchase Order</h2>
-          <button onClick={onClose} className="text-text-secondary hover:text-text-primary">
-            <X size={18} />
-          </button>
-        </div>
-        <form onSubmit={submit} className="space-y-3">
-          <div>
-            <label className="block text-sm font-medium mb-1.5">Item</label>
-            <select value={itemId} onChange={(e) => setItemId(e.target.value)} className={inputClass()}>
-              {items.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.name} ({i.unit})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1.5">Supplier (optional)</label>
-            <input value={supplier} onChange={(e) => setSupplier(e.target.value)} className={inputClass()} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Quantity</label>
-              <input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} required className={inputClass()} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Unit Cost (optional)</label>
-              <input type="number" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} className={inputClass()} />
-            </div>
-          </div>
-          <button type="submit" disabled={loading} className="btn-primary w-full mt-2">
-            {loading ? "Creating..." : "Create Purchase Order"}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-function ItemActionsModal({
-  item,
-  onClose,
-  onDone,
-  onError,
-}: {
-  item: Item;
-  onClose: () => void;
-  onDone: () => void;
-  onError: (e: string | null) => void;
-}) {
-  const [tab, setTab] = useState<"RECEIVE" | "ISSUE" | "ADJUST">("RECEIVE");
-  const [quantity, setQuantity] = useState("");
-  const [note, setNote] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    onError(null);
-
-    const endpoint =
-      tab === "RECEIVE"
-        ? `/api/inventory/${item.id}/receive`
-        : tab === "ISSUE"
-        ? `/api/inventory/${item.id}/issue`
-        : `/api/inventory/${item.id}/adjust`;
-
-    const body =
-      tab === "ADJUST"
-        ? { newQuantity: Number(quantity), reason: note }
-        : { quantity: Number(quantity), note };
-
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    setLoading(false);
-    if (!res.ok) {
-      onError((await res.json()).error || "Could not update stock.");
-      return;
-    }
-    onDone();
-    onClose();
-  }
-
-  return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4">
-      <div className="card w-full max-w-md">
-        <div className="flex items-center justify-between mb-4">
-          <h2>{item.name}</h2>
-          <button onClick={onClose} className="text-text-secondary hover:text-text-primary">
-            <X size={18} />
-          </button>
-        </div>
-        <p className="text-sm text-text-secondary mb-4">
-          Current stock: {item.currentStock} {item.unit}
-        </p>
-
-        <div className="grid grid-cols-3 gap-2 mb-4">
-          {(["RECEIVE", "ISSUE", "ADJUST"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={clsx(
-                "rounded-control px-3 py-2 text-sm font-medium border transition-colors",
-                tab === t
-                  ? "bg-primary-50 border-primary-300 text-primary-700"
-                  : "bg-surface border-border text-text-secondary"
-              )}
-            >
-              {t === "RECEIVE" ? "Receive" : t === "ISSUE" ? "Issue" : "Adjust"}
-            </button>
-          ))}
-        </div>
-
-        <form onSubmit={submit} className="space-y-3">
-          <div>
-            <label className="block text-sm font-medium mb-1.5">
-              {tab === "ADJUST" ? "Counted quantity" : "Quantity"}
-            </label>
-            <input
-              type="number"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              required
-              className={inputClass()}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1.5">
-              {tab === "ADJUST" ? "Reason (required)" : "Note (optional)"}
-            </label>
-            <input value={note} onChange={(e) => setNote(e.target.value)} required={tab === "ADJUST"} className={inputClass()} />
-          </div>
-          <button type="submit" disabled={loading} className="btn-primary w-full">
-            {loading ? "Saving..." : tab === "RECEIVE" ? "Receive Stock" : tab === "ISSUE" ? "Issue Stock" : "Save Adjustment"}
-          </button>
-        </form>
-      </div>
     </div>
   );
 }

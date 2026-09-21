@@ -54,7 +54,7 @@ export async function POST(req: Request) {
       }
 
       await deductRecipeStock(tx, lines, `Charged to ${folio.guest.fullName}`, session.user.id);
-    });
+    }, { timeout: 15000 });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Could not complete the order." }, { status: 400 });
   }

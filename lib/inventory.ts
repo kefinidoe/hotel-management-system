@@ -100,12 +100,19 @@ export async function deductRecipeStock(
 ): Promise<void> {
   const needed = new Map<string, number>(); // inventoryItemId -> base-unit quantity needed
 
+  const menuItemIds = [...new Set(lines.map((l) => l.menuItemId).filter((id): id is string => !!id))];
+  const recipes =
+    menuItemIds.length > 0
+      ? await tx.recipe.findMany({
+          where: { menuItemId: { in: menuItemIds } },
+          include: { ingredients: true },
+        })
+      : [];
+  const recipeByMenuItemId = new Map(recipes.map((r) => [r.menuItemId, r]));
+
   for (const line of lines) {
     if (!line.menuItemId) continue;
-    const recipe = await tx.recipe.findUnique({
-      where: { menuItemId: line.menuItemId },
-      include: { ingredients: true },
-    });
+    const recipe = recipeByMenuItemId.get(line.menuItemId);
     if (!recipe) continue; // no recipe defined for this item -- nothing to deduct
 
     for (const ing of recipe.ingredients) {

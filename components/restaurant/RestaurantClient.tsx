@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Minus, Plus, Trash2, ShoppingCart, UtensilsCrossed, Settings2, X } from "lucide-react";
 import clsx from "clsx";
 
-type MenuItem = { id: string; name: string; price: number };
+type MenuItem = { id: string; name: string; price: number; availablePortions: number | null };
 type Category = { id: string; name: string; items: MenuItem[] };
 type OrderLine = { menuItemId: string; name: string; unitPrice: number; quantity: number };
 type PaymentMethod = { id: string; name: string };
@@ -181,16 +181,26 @@ export default function RestaurantClient({ menu }: { menu: Category[] }) {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {items.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => addItem(item)}
-                className="card text-left hover:border-primary-300 transition-colors"
-              >
-                <p className="font-semibold leading-snug">{item.name}</p>
-                <p className="text-sm text-text-secondary mt-1">{money(item.price)}</p>
-              </button>
-            ))}
+            {items.map((item) => {
+              const soldOut = item.availablePortions !== null && item.availablePortions <= 0;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => !soldOut && addItem(item)}
+                  disabled={soldOut}
+                  className={clsx(
+                    "card text-left transition-colors",
+                    soldOut
+                      ? "opacity-40 cursor-not-allowed"
+                      : "hover:border-primary-300"
+                  )}
+                >
+                  <p className="font-semibold leading-snug">{item.name}</p>
+                  <p className="text-sm text-text-secondary mt-1">{money(item.price)}</p>
+                  {soldOut && <p className="text-xs text-danger mt-1">Sold out</p>}
+                </button>
+              );
+            })}
             {items.length === 0 && (
               <p className="text-sm text-text-secondary col-span-full">
                 No items in this category yet — add some under Manage Menu.

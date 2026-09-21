@@ -80,7 +80,7 @@ export async function POST(req: Request) {
       await deductRecipeStock(tx, lines, `Sold to ${guest.fullName}`, session.user.id);
 
       return { guestName: guest.fullName, folioId: folio.id };
-    });
+    }, { timeout: 15000 });
 
     return NextResponse.json({ ok: true, ...result, total, method: method.name }, { status: 201 });
   } catch (err: any) {
