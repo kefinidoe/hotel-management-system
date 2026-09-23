@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { requireRole } from "@/lib/authz";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { readCart, round2, cartTotal } from "@/lib/restaurant";
@@ -8,6 +9,9 @@ import { deductRecipeStock } from "@/lib/inventory";
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const forbidden = requireRole(session, ["ADMIN", "MANAGER", "RECEPTIONIST"]);
+  if (forbidden) return forbidden;
 
   const body = await req.json();
   const folioId: string | undefined = body.folioId;

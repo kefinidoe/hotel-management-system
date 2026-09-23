@@ -7,6 +7,9 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+    const forbidden = requireRole(session, ["ADMIN", "MANAGER", "RECEPTIONIST"]);
+  if (forbidden) return forbidden;
+
   const body = await req.json();
   const room = await prisma.room.update({
     where: { id: params.id },
@@ -25,6 +28,9 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const forbidden = requireRole(session, ["ADMIN", "MANAGER", "RECEPTIONIST"]);
+  if (forbidden) return forbidden;
 
   try {
     await prisma.room.delete({ where: { id: params.id } });

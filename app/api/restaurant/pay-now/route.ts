@@ -11,6 +11,9 @@ export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+    const forbidden = requireRole(session, ["ADMIN", "MANAGER", "RECEPTIONIST"]);
+  if (forbidden) return forbidden;
+
   const body = await req.json();
   const paymentMethodId: string | undefined = body.paymentMethodId;
   const customerName = typeof body.customerName === "string" ? body.customerName.trim() : "";

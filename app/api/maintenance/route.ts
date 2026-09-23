@@ -30,6 +30,8 @@ export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+   
+
   const body = await req.json();
   if (!body.title) {
     return NextResponse.json({ error: "A ticket title is required." }, { status: 400 });
