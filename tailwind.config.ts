@@ -1,8 +1,10 @@
 import type { Config } from "tailwindcss";
 
 // Design system tokens for the Hotel Management System.
-// Sophisticated neutral base + one strong hospitality accent (deep teal/emerald),
-// per the product's visual direction. Keep all screens referencing these tokens
+// Brand: Axis Hotel Nakuru — deep navy + gold, per the hotel's actual logo.
+// The sidebar nav uses its own `sidebar` scale (matched to a reference
+// screenshot: dark navy-charcoal bg + teal active state) rather than
+// reusing primary/champagne. Keep all screens referencing these tokens
 // instead of raw hex values so the whole app stays visually consistent.
 
 const config: Config = {
@@ -19,20 +21,30 @@ const config: Config = {
           secondary: "#6B7268",   // muted gray
           muted: "#9CA39B",
         },
-        // Primary accent — deep teal/emerald
+        // Primary accent — Axis navy (from logo, exact hex #0B0244)
         primary: {
-          50: "#EAF3F0",
-          100: "#CFE4DC",
-          300: "#7FB5A3",
-          500: "#1F6F5C",
-          600: "#175A4A",
-          700: "#124639",
+          50: "#ECEBF0",
+          100: "#CECCDA",
+          300: "#918DAB",
+          500: "#0B0244",
+          600: "#0A023D",
+          700: "#090236",
         },
-        // Secondary accent — warm champagne
+        // Secondary accent — Axis gold (from logo, exact hex #DB921F)
         champagne: {
-          50: "#FBF6EC",
-          200: "#EBDCB8",
-          500: "#C9A24B",
+          50: "#FAEFDD",
+          200: "#EFCE9A",
+          500: "#DB921F",
+          600: "#BA7C1A",
+        },
+        // Dark sidebar panel — colors matched exactly from reference screenshot
+        sidebar: {
+          bg: "#182533",
+          hover: "#22384A",      // derived by lightening bg — no hover state was visible to sample directly
+          active: "#1C989E",
+          text: "#F2F6F9",
+          textMuted: "rgba(242, 246, 249, 0.6)",
+          border: "rgba(242, 246, 249, 0.08)",
         },
         success: "#2E7D46",
         warning: "#B8860B",
@@ -51,7 +63,6 @@ const config: Config = {
         popover: "0 4px 16px rgba(31, 36, 33, 0.12)",
       },
       spacing: {
-        // 8px base spacing system
         4.5: "1.125rem",
       },
     },

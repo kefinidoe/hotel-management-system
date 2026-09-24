@@ -54,7 +54,6 @@ const NAV: NavGroup[] = [
     title: "Administration",
     items: [
       { label: "Staff", href: "/dashboard/staff", icon: UserCog },
-      { label: "Settings", href: "/dashboard/settings", icon: Settings },
     ],
   },
 ];
@@ -66,13 +65,13 @@ export default function Sidebar() {
   return (
     <aside
       className={clsx(
-        "h-screen sticky top-0 flex flex-col border-r border-border bg-surface transition-all",
+        "h-screen sticky top-0 flex flex-col border-r border-sidebar-border bg-sidebar-bg transition-all",
         collapsed ? "w-[76px]" : "w-64"
       )}
     >
-      <div className="h-16 flex items-center px-4 border-b border-border">
+      <div className="h-16 flex items-center px-4 border-b border-sidebar-border">
         {!collapsed && (
-          <span className="font-semibold text-primary-700 tracking-tight">HMS</span>
+          <span className="font-semibold text-sidebar-text tracking-tight">HMS</span>
         )}
       </div>
 
@@ -80,7 +79,7 @@ export default function Sidebar() {
         {NAV.map((group) => (
           <div key={group.title}>
             {!collapsed && (
-              <p className="px-3 mb-1.5 text-xs font-medium uppercase tracking-wide text-text-muted">
+              <p className="px-3 mb-1.5 text-xs font-medium uppercase tracking-wide text-sidebar-textMuted">
                 {group.title}
               </p>
             )}
@@ -94,10 +93,10 @@ export default function Sidebar() {
                     href={item.href}
                     title={collapsed ? item.label : undefined}
                     className={clsx(
-                      "flex items-center gap-3 rounded-control px-3 py-2 text-sm font-medium transition-colors",
+                      "flex items-center gap-3 rounded-control px-3 py-2 text-sm font-medium transition-colors border-l-2",
                       active
-                        ? "bg-primary-50 text-primary-700"
-                        : "text-text-secondary hover:bg-primary-50/60 hover:text-text-primary"
+                        ? "bg-white/10 text-sidebar-active border-sidebar-active"
+                        : "text-sidebar-textMuted border-transparent hover:bg-sidebar-hover hover:text-sidebar-text"
                     )}
                   >
                     <Icon size={18} strokeWidth={1.8} className="shrink-0" />
@@ -112,8 +111,8 @@ export default function Sidebar() {
 
       <button
         onClick={() => setCollapsed((c) => !c)}
-        className="flex items-center gap-2 px-4 py-3 border-t border-border text-text-secondary
-                   hover:text-text-primary text-sm"
+        className="flex items-center gap-2 px-4 py-3 border-t border-sidebar-border text-sidebar-textMuted
+                   hover:text-sidebar-text text-sm"
       >
         {collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
         {!collapsed && <span>Collapse</span>}
