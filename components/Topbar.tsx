@@ -1,7 +1,8 @@
 "use client";
 
-import { Search, Bell, HelpCircle, LogOut } from "lucide-react";
+import { Bell, HelpCircle, LogOut } from "lucide-react";
 import { signOut } from "next-auth/react";
+import SearchBar from "@/components/SearchBar";
 
 export default function Topbar({
   userName,
@@ -13,18 +14,7 @@ export default function Topbar({
   return (
     <header className="h-16 sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-border bg-surface/90 backdrop-blur px-6">
       <div className="flex-1 max-w-md">
-        <div className="relative">
-          <Search
-            size={16}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
-          />
-          <input
-            type="text"
-            placeholder="Search guests, reservations, rooms..."
-            className="w-full rounded-control border border-border bg-bg pl-9 pr-3 py-2 text-sm
-                       focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-          />
-        </div>
+        <SearchBar />
       </div>
 
       <div className="flex items-center gap-4">

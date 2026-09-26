@@ -71,7 +71,7 @@ export default function Sidebar() {
     >
       <div className="h-16 flex items-center px-4 border-b border-sidebar-border">
         {!collapsed && (
-          <span className="font-semibold text-sidebar-text tracking-tight">HMS</span>
+          <span className="font-semibold text-sidebar-text tracking-tight">AXIS HOTEL</span>
         )}
       </div>
 

@@ -76,9 +76,19 @@ export default function CreateReservationModal({
       }),
     });
     setLoading(false);
-    const data = await res.json();
+
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      // Server returned an empty or non-JSON body -- usually a dropped
+      // connection mid-request, not something the form did wrong.
+      onError("Lost connection while saving. Please check your connection and try again.");
+      return;
+    }
+
     if (!res.ok) {
-      onError(data.error || "Could not create reservation.");
+      onError(data?.error || "Could not create reservation.");
       return;
     }
     onCreated(data.id);

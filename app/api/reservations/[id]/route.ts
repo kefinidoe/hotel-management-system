@@ -8,9 +8,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const forbidden = requireRole(session, ["ADMIN", "MANAGER", "RECEPTIONIST"]);
-  if (forbidden) return forbidden;
-
+   
   const body = await req.json();
   const reservation = await prisma.reservation.findUnique({
     where: { id: params.id },

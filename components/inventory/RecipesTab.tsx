@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { formatQty } from "@/lib/inventory";
 import type { InventoryItemRow } from "./InventoryClient";
 import CreateRecipeModal from "./CreateRecipeModal";
@@ -33,6 +33,19 @@ export default function RecipesTab({ inventoryItems }: { inventoryItems: Invento
 
   useEffect(load, []);
 
+  async function deleteRecipe(id: string, name: string) {
+    if (!confirm(`Delete the recipe for "${name}"? This only removes the ingredient list -- past sales and stock history are untouched.`)) {
+      return;
+    }
+    const res = await fetch(`/api/recipes/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error ?? "Could not delete this recipe.");
+      return;
+    }
+    setRecipes((prev) => prev?.filter((r) => r.id !== id) ?? null);
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -60,10 +73,19 @@ export default function RecipesTab({ inventoryItems }: { inventoryItems: Invento
                   <p className="font-semibold">{r.name}</p>
                   <p className="text-xs text-text-muted">{r.category}</p>
                 </div>
-                <span className="flex items-center gap-1.5 text-xs font-medium">
-                  <span className={`w-2 h-2 rounded-full ${dotClass}`} />
-                  {status}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="flex items-center gap-1.5 text-xs font-medium">
+                    <span className={`w-2 h-2 rounded-full ${dotClass}`} />
+                    {status}
+                  </span>
+                  <button
+                    onClick={() => deleteRecipe(r.id, r.name)}
+                    className="text-text-muted hover:text-danger"
+                    title="Delete recipe"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-3 gap-2 mt-4 text-center">
