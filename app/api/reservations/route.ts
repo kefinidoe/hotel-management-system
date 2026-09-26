@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { rangesOverlap } from "@/lib/dates";
+import { requireRole } from "@/lib/authz";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -45,7 +46,8 @@ export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  
+    const forbidden = requireRole(session, ["ADMIN", "MANAGER", "RECEPTIONIST"]);
+  if (forbidden) return forbidden;
 
   const body = await req.json();
   const {
