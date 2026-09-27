@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/authz";
+import { requireAuth, requireRole } from "@/lib/authz";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const auth = await requireAuth();
@@ -25,6 +25,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     reorderLevel: Number(item.reorderLevel),
     costPerUnit: Number(item.costPerUnit),
     supplier: item.supplier,
+    isActive: item.isActive,
     stockMovements: item.stockMovements.map((m) => ({
       id: m.id,
       type: m.type,
@@ -48,6 +49,9 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+
+  const forbidden = requireRole(auth, ["ADMIN", "MANAGER"]);
+  if (forbidden) return forbidden;
 
   const body = await req.json();
   const item = await prisma.inventoryItem.findUnique({ where: { id: params.id } });
@@ -83,7 +87,42 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       reorderLevel: body.reorderLevel ?? undefined,
       costPerUnit: body.costPerUnit ?? undefined,
       supplier: body.supplier ?? undefined,
+      isActive: body.isActive ?? undefined,
     },
   });
   return NextResponse.json(updated);
+}
+
+// Delete or deactivate, depending on whether real history exists.
+// A never-used item (no purchases, wastage, stock movements, or recipe
+// links) is genuinely deleted -- nothing to protect. Anything with real
+// history is deactivated instead: hidden from the active list, but every
+// past purchase/wastage/movement record that points at it stays intact
+// and still makes sense.
+export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
+  const forbidden = requireRole(auth, ["ADMIN", "MANAGER"]);
+  if (forbidden) return forbidden;
+
+  const item = await prisma.inventoryItem.findUnique({ where: { id: params.id } });
+  if (!item) return NextResponse.json({ error: "Item not found." }, { status: 404 });
+
+  const [purchaseCount, wastageCount, movementCount, recipeCount] = await Promise.all([
+    prisma.purchase.count({ where: { inventoryItemId: params.id } }),
+    prisma.wastage.count({ where: { inventoryItemId: params.id } }),
+    prisma.stockMovement.count({ where: { inventoryItemId: params.id } }),
+    prisma.recipeIngredient.count({ where: { inventoryItemId: params.id } }),
+  ]);
+
+  const hasHistory = purchaseCount > 0 || wastageCount > 0 || movementCount > 0 || recipeCount > 0;
+
+  if (!hasHistory) {
+    await prisma.inventoryItem.delete({ where: { id: params.id } });
+    return NextResponse.json({ mode: "deleted" });
+  }
+
+  await prisma.inventoryItem.update({ where: { id: params.id }, data: { isActive: false } });
+  return NextResponse.json({ mode: "deactivated" });
 }

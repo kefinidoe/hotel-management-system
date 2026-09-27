@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/authz";
+import { requireAuth, requireRole } from "@/lib/authz";
 import { getStockStatus } from "@/lib/inventory";
 
-export async function GET() {
+export async function GET(req: Request) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
-  const items = await prisma.inventoryItem.findMany({ orderBy: { name: "asc" } });
+  const { searchParams } = new URL(req.url);
+  const includeInactive = searchParams.get("includeInactive") === "true";
+
+  const items = await prisma.inventoryItem.findMany({
+    where: includeInactive ? undefined : { isActive: true },
+    orderBy: { name: "asc" },
+  });
 
   return NextResponse.json(
     items.map((i) => {
@@ -24,6 +30,7 @@ export async function GET() {
         reorderLevel,
         costPerUnit,
         supplier: i.supplier,
+        isActive: i.isActive,
         stockValue: Math.round(currentStock * costPerUnit),
         status: getStockStatus(currentStock, reorderLevel),
       };
@@ -34,6 +41,9 @@ export async function GET() {
 export async function POST(req: Request) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+
+  const forbidden = requireRole(auth, ["ADMIN", "MANAGER"]);
+  if (forbidden) return forbidden;
 
   const body = await req.json();
   const { sku, name, category, unit, currentStock, reorderLevel, costPerUnit, supplier } = body;
