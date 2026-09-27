@@ -348,6 +348,7 @@ model InventoryItem {
   reorderLevel  Decimal  @db.Decimal(12, 2) @default(0)
   costPerUnit   Decimal  @db.Decimal(10, 4) @default(0) // cost per base unit, e.g. cost per gram
   supplier      String?
+  isActive      Boolean  @default(true) // deactivated (not deleted) once it has real purchase/wastage/movement history
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
