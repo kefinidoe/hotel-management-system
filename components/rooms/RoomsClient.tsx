@@ -103,19 +103,81 @@ export default function RoomsClient({
           <button
             key={room.id}
             onClick={() => setSelectedRoom(room)}
-            className="card text-left hover:border-primary-300 transition-colors"
+            className="group relative overflow-hidden rounded-2xl border border-border bg-surface text-left shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-primary-300 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-primary-500/30"
           >
-            <p className="text-lg font-semibold">{room.number}</p>
-            <p className="text-sm text-text-secondary">{room.roomTypeName}</p>
-            <span className={clsx("badge mt-3", statusClasses(room.status))}>
-              {room.status.replace("_", " ")}
-            </span>
+            <div className="relative h-2 bg-gradient-to-r from-primary-500 via-primary-400 to-champagne-400" />
+
+            <div className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wider text-text-muted">
+                    Room
+                  </p>
+                  <p className="mt-0.5 text-2xl font-bold tracking-tight text-text-primary">
+                    {room.number}
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-text-secondary">
+                    {room.roomTypeName}
+                  </p>
+                </div>
+
+                <span className={clsx(
+                  "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold",
+                  statusClasses(room.status)
+                )}>
+                  <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-current" />
+                  {room.status.replace("_", " ")}
+                </span>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <div className="flex items-center gap-2 rounded-xl border border-border bg-bg/60 px-2.5 py-2">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-700 text-xs">
+                    ♨
+                  </span>
+                  <span className="text-[11px] font-medium text-text-secondary">Hot shower</span>
+                </div>
+
+                <div className="flex items-center gap-2 rounded-xl border border-border bg-bg/60 px-2.5 py-2">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-700 text-xs">
+                    ▣
+                  </span>
+                  <span className="text-[11px] font-medium text-text-secondary">Study table</span>
+                </div>
+
+                <div className="flex items-center gap-2 rounded-xl border border-border bg-bg/60 px-2.5 py-2">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-700 text-xs">
+                    Wi
+                  </span>
+                  <span className="text-[11px] font-medium text-text-secondary">Free Wi-Fi</span>
+                </div>
+
+                <div className="flex items-center gap-2 rounded-xl border border-border bg-bg/60 px-2.5 py-2">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-700 text-xs">
+                    TV
+                  </span>
+                  <span className="text-[11px] font-medium text-text-secondary">TV</span>
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
+                <span className="text-xs text-text-muted">
+                  {room.floor ? `Floor ${room.floor}` : "Room details"}
+                </span>
+                <span className="text-xs font-semibold text-primary-700 transition-transform duration-200 group-hover:translate-x-0.5">
+                  View details →
+                </span>
+              </div>
+            </div>
           </button>
         ))}
         {initialRooms.length === 0 && (
-          <p className="text-text-secondary text-sm col-span-full">
-            No rooms yet. Add your first room to get started.
-          </p>
+          <div className="col-span-full rounded-2xl border border-dashed border-border bg-surface px-6 py-10 text-center">
+            <p className="text-sm font-medium text-text-primary">No rooms yet</p>
+            <p className="mt-1 text-sm text-text-secondary">
+              Add your first room to get started.
+            </p>
+          </div>
         )}
       </div>
 

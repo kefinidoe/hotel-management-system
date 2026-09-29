@@ -22,7 +22,7 @@ type ActivityItem = {
 const money = (n: number) => `KSh ${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
 function inputClass() {
-  return "w-full rounded-control border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent";
+  return "w-full rounded-xl border border-border bg-surface px-4 py-3 text-sm shadow-sm transition-all placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400";
 }
 
 export default function RestaurantClient({ menu }: { menu: Category[] }) {
@@ -148,31 +148,31 @@ export default function RestaurantClient({ menu }: { menu: Category[] }) {
 
   return (
     <div>
-      <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-7">
         <div>
-          <h1>Restaurant POS</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Restaurant POS</h1>
           <p className="text-text-secondary text-sm mt-1">
             {money(todayTotal)} sold today. Build an order, then charge it to a room or take
             payment at the counter.
           </p>
         </div>
-        <button onClick={() => setManageOpen(true)} className="btn-secondary">
+        <button onClick={() => setManageOpen(true)} className="btn-secondary rounded-xl shadow-sm hover:shadow-md transition-all">
           <Settings2 size={16} /> Manage Menu
         </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 items-start">
         <div>
-          <div className="flex flex-wrap gap-2 mb-4">
+          <div className="flex flex-wrap gap-2 mb-5 p-1.5 rounded-2xl border border-border bg-surface/80 shadow-sm">
             {menu.map((c) => (
               <button
                 key={c.id}
                 onClick={() => setActiveCategory(c.id)}
                 className={clsx(
-                  "rounded-full px-4 py-2 text-sm font-medium border transition-colors",
+                  "rounded-xl px-5 py-2.5 text-sm font-semibold border transition-all duration-200",
                   activeCategory === c.id
-                    ? "bg-primary-50 border-primary-300 text-primary-700"
-                    : "bg-surface border-border text-text-secondary hover:border-primary-300"
+                    ? "bg-primary-700 border-primary-700 text-white shadow-md shadow-primary-500/15"
+                    : "bg-transparent border-transparent text-text-secondary hover:bg-primary-50 hover:border-primary-200 hover:text-primary-700"
                 )}
               >
                 {c.name}
@@ -180,7 +180,7 @@ export default function RestaurantClient({ menu }: { menu: Category[] }) {
             ))}
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             {items.map((item) => {
               const soldOut = item.availablePortions !== null && item.availablePortions <= 0;
               return (
@@ -189,7 +189,7 @@ export default function RestaurantClient({ menu }: { menu: Category[] }) {
                   onClick={() => !soldOut && addItem(item)}
                   disabled={soldOut}
                   className={clsx(
-                    "card text-left transition-colors",
+                    "group relative overflow-hidden rounded-2xl border border-border bg-surface p-5 text-left shadow-sm transition-all duration-200",
                     soldOut
                       ? "opacity-40 cursor-not-allowed"
                       : "hover:border-primary-300"
@@ -210,8 +210,8 @@ export default function RestaurantClient({ menu }: { menu: Category[] }) {
         </div>
 
         <div className="space-y-4">
-          <div className="card">
-            <h2 className="flex items-center gap-2 mb-3">
+          <div className="card rounded-2xl border border-border bg-surface p-5 shadow-sm">
+            <h2 className="flex items-center gap-2 mb-4 text-lg font-bold">
               <ShoppingCart size={18} strokeWidth={1.8} /> Order
             </h2>
 
@@ -222,14 +222,14 @@ export default function RestaurantClient({ menu }: { menu: Category[] }) {
             {order.length > 0 && (
               <div className="space-y-2">
                 {order.map((l) => (
-                  <div key={l.menuItemId} className="flex items-center gap-2 text-sm">
+                  <div key={l.menuItemId} className="flex items-center gap-2 rounded-xl border border-border bg-bg/40 p-3 text-sm">
                     <div className="flex-1 min-w-0">
                       <p className="font-medium truncate">{l.name}</p>
                       <p className="text-xs text-text-secondary">{money(l.unitPrice)} each</p>
                     </div>
                     <button
                       onClick={() => changeQty(l.menuItemId, -1)}
-                      className="rounded-control border border-border p-1 hover:bg-bg"
+                      className="rounded-lg border border-border bg-surface p-1.5 shadow-sm transition-colors hover:bg-bg"
                       aria-label={`Reduce ${l.name}`}
                     >
                       <Minus size={14} />
@@ -237,7 +237,7 @@ export default function RestaurantClient({ menu }: { menu: Category[] }) {
                     <span className="w-6 text-center font-medium">{l.quantity}</span>
                     <button
                       onClick={() => changeQty(l.menuItemId, 1)}
-                      className="rounded-control border border-border p-1 hover:bg-bg"
+                      className="rounded-lg border border-border bg-surface p-1.5 shadow-sm transition-colors hover:bg-bg"
                       aria-label={`Add another ${l.name}`}
                     >
                       <Plus size={14} />
@@ -256,7 +256,7 @@ export default function RestaurantClient({ menu }: { menu: Category[] }) {
               </div>
             )}
 
-            <div className="border-t border-border mt-4 pt-3 space-y-2 text-sm">
+            <div className="mt-4 rounded-xl border border-border bg-bg/40 p-4 space-y-3 text-sm">
               <div className="flex justify-between">
                 <span className="text-text-secondary">Subtotal</span>
                 <span>{money(subtotal)}</span>
@@ -271,22 +271,22 @@ export default function RestaurantClient({ menu }: { menu: Category[] }) {
                   className="w-24 rounded-control border border-border px-2 py-1 text-sm text-right"
                 />
               </div>
-              <div className="flex justify-between font-semibold text-base pt-1 border-t border-border">
+              <div className="flex justify-between font-bold text-base pt-3 border-t border-border">
                 <span>Total</span>
                 <span>{money(total)}</span>
               </div>
             </div>
           </div>
 
-          <div className="card">
-            <div className="grid grid-cols-2 gap-2 mb-4">
+          <div className="card rounded-2xl border border-border bg-surface p-5 shadow-sm">
+            <div className="grid grid-cols-2 gap-2 mb-5 p-1 rounded-xl bg-bg/60 border border-border">
               <button
                 onClick={() => setMode("ROOM")}
                 className={clsx(
-                  "rounded-control px-3 py-2.5 text-sm font-medium border transition-colors",
+                  "rounded-lg px-3 py-3 text-sm font-semibold border transition-all duration-200",
                   mode === "ROOM"
-                    ? "bg-primary-50 border-primary-300 text-primary-700"
-                    : "bg-surface border-border text-text-secondary hover:border-primary-300"
+                    ? "bg-primary-700 border-primary-700 text-white shadow-md shadow-primary-500/15"
+                    : "bg-transparent border-transparent text-text-secondary hover:bg-primary-50 hover:border-primary-200 hover:text-primary-700"
                 )}
               >
                 Charge to Room
@@ -294,10 +294,10 @@ export default function RestaurantClient({ menu }: { menu: Category[] }) {
               <button
                 onClick={() => setMode("PAY")}
                 className={clsx(
-                  "rounded-control px-3 py-2.5 text-sm font-medium border transition-colors",
+                  "rounded-lg px-3 py-3 text-sm font-semibold border transition-all duration-200",
                   mode === "PAY"
-                    ? "bg-primary-50 border-primary-300 text-primary-700"
-                    : "bg-surface border-border text-text-secondary hover:border-primary-300"
+                    ? "bg-primary-700 border-primary-700 text-white shadow-md shadow-primary-500/15"
+                    : "bg-transparent border-transparent text-text-secondary hover:bg-primary-50 hover:border-primary-200 hover:text-primary-700"
                 )}
               >
                 Pay Now
@@ -396,8 +396,8 @@ export default function RestaurantClient({ menu }: { menu: Category[] }) {
             </p>
           </div>
 
-          <div className="card">
-            <h2 className="flex items-center gap-2 mb-3 text-base">
+          <div className="card rounded-2xl border border-border bg-surface p-5 shadow-sm">
+            <h2 className="flex items-center gap-2 mb-4 text-base font-bold">
               <UtensilsCrossed size={17} strokeWidth={1.8} /> Recent Restaurant Activity
             </h2>
             <div className="space-y-3">
@@ -496,8 +496,8 @@ function ManageMenuModal({ menu, onClose }: { menu: Category[]; onClose: () => v
   }
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4">
-      <div className="card w-full max-w-md max-h-[85vh] overflow-y-auto">
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="card w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl border border-border bg-surface p-6 shadow-2xl">
         <div className="flex items-center justify-between mb-4">
           <h2>Manage Menu</h2>
           <button onClick={onClose} className="text-text-secondary hover:text-text-primary">

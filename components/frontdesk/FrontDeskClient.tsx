@@ -59,90 +59,187 @@ export default function FrontDeskClient({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-7">
         <div>
-          <h1>Front Desk</h1>
-          <p className="text-text-secondary text-sm mt-1">
-            {availableRoomsCount} rooms available today. Check-out is strictly at 10:00 AM.
-          </p>
+          <div className="flex items-center gap-3">
+            <div className="h-11 w-11 rounded-2xl bg-primary-50 border border-primary-100 flex items-center justify-center text-primary-700 shadow-sm">
+              <span className="text-lg">⌂</span>
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight">Front Desk</h1>
+              <p className="text-text-secondary text-sm mt-0.5">
+                Manage arrivals, departures and in-house guests.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-primary-100 bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-700">
+            <span className="h-2 w-2 rounded-full bg-primary-500" />
+            {availableRoomsCount} rooms available today
+            <span className="text-primary-300">•</span>
+            Check-out at 10:00 AM
+          </div>
         </div>
-        <button onClick={() => setWalkInOpen(true)} className="btn-primary">
-          <UserPlus size={16} /> Walk-in
+
+        <button
+          onClick={() => setWalkInOpen(true)}
+          className="btn-primary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+        >
+          <UserPlus size={17} /> Walk-in
         </button>
       </div>
 
       {error && (
-        <p className="text-sm text-danger bg-danger/5 border border-danger/20 rounded-control px-3 py-2 mb-4">
+        <p className="text-sm text-danger bg-danger/5 border border-danger/20 rounded-2xl px-4 py-3 mb-5 shadow-sm">
           {error}
         </p>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <section>
-          <h2 className="mb-3">Arrivals ({arrivals.length})</h2>
-          <div className="space-y-2">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-4 pb-3 border-b border-border">
+            <div>
+              <h2 className="text-base font-bold">Arrivals</h2>
+              <p className="text-xs text-text-secondary mt-0.5">Guests checking in today</p>
+            </div>
+            <span className="min-w-8 h-8 px-2 rounded-full bg-primary-50 text-primary-700 flex items-center justify-center text-xs font-bold">
+              {arrivals.length}
+            </span>
+          </div>
+
+          <div className="space-y-3">
             {arrivals.map((r) => (
-              <div key={r.id} className="card">
-                <p className="font-medium">{r.guestName}</p>
-                <p className="text-sm text-text-secondary">Room {r.roomNumbers} · {r.code}</p>
+              <div
+                key={r.id}
+                className="group rounded-2xl border border-border bg-bg/40 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary-200 hover:shadow-md"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold truncate">{r.guestName}</p>
+                    <p className="text-xs text-text-secondary mt-1">
+                      Room {r.roomNumbers} <span className="mx-1">·</span> {r.code}
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-primary-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-primary-700">
+                    Arrival
+                  </span>
+                </div>
+
                 <button
                   onClick={() => checkIn(r.id)}
                   disabled={loadingId === r.id}
-                  className="btn-primary w-full mt-3"
+                  className="btn-primary w-full mt-4 transition-all duration-200 group-hover:shadow-sm"
                 >
                   {loadingId === r.id ? "Checking in..." : "Check In"}
                 </button>
               </div>
             ))}
-            {arrivals.length === 0 && <p className="text-sm text-text-secondary">No arrivals today.</p>}
+            {arrivals.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-border px-4 py-8 text-center">
+                <p className="text-sm font-medium text-text-primary">No arrivals today</p>
+                <p className="text-xs text-text-secondary mt-1">You’re all caught up.</p>
+              </div>
+            )}
           </div>
         </section>
 
-        <section>
-          <h2 className="mb-3">Departures ({departures.length})</h2>
-          <div className="space-y-2">
+        <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-4 pb-3 border-b border-border">
+            <div>
+              <h2 className="text-base font-bold">Departures</h2>
+              <p className="text-xs text-text-secondary mt-0.5">Guests checking out today</p>
+            </div>
+            <span className="min-w-8 h-8 px-2 rounded-full bg-champagne-50 text-champagne-500 flex items-center justify-center text-xs font-bold">
+              {departures.length}
+            </span>
+          </div>
+
+          <div className="space-y-3">
             {departures.map((r) => (
-              <div key={r.id} className="card">
-                <p className="font-medium">{r.guestName}</p>
-                <p className="text-sm text-text-secondary">Room {r.roomNumbers} · {r.code}</p>
+              <div
+                key={r.id}
+                className="group rounded-2xl border border-border bg-bg/40 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary-200 hover:shadow-md"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold truncate">{r.guestName}</p>
+                    <p className="text-xs text-text-secondary mt-1">
+                      Room {r.roomNumbers} <span className="mx-1">·</span> {r.code}
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-champagne-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-champagne-500">
+                    Departure
+                  </span>
+                </div>
+
                 <button
                   onClick={() =>
                     r.openFolioId
                       ? setOpenFolio({ folioId: r.openFolioId, reservationId: r.id })
                       : setError("No open folio found for this reservation.")
                   }
-                  className="btn-secondary w-full mt-3"
+                  className="btn-secondary w-full mt-4 transition-all duration-200 group-hover:border-primary-200"
                 >
                   View Folio / Check Out
                 </button>
               </div>
             ))}
-            {departures.length === 0 && <p className="text-sm text-text-secondary">No departures today.</p>}
+            {departures.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-border px-4 py-8 text-center">
+                <p className="text-sm font-medium text-text-primary">No departures today</p>
+                <p className="text-xs text-text-secondary mt-1">No check-outs are scheduled.</p>
+              </div>
+            )}
           </div>
         </section>
 
-        <section>
-          <h2 className="mb-3">In-house Guests ({inHouse.length})</h2>
-          <div className="space-y-2">
+        <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-4 pb-3 border-b border-border">
+            <div>
+              <h2 className="text-base font-bold">In-house Guests</h2>
+              <p className="text-xs text-text-secondary mt-0.5">Currently staying at the hotel</p>
+            </div>
+            <span className="min-w-8 h-8 px-2 rounded-full bg-info/10 text-info flex items-center justify-center text-xs font-bold">
+              {inHouse.length}
+            </span>
+          </div>
+
+          <div className="space-y-3">
             {inHouse.map((r) => (
-              <div key={r.id} className="card">
-                <p className="font-medium">{r.guestName}</p>
-                <p className="text-sm text-text-secondary">
-                  Room {r.roomNumbers} · until {new Date(r.checkOutDate).toLocaleDateString()}
-                </p>
+              <div
+                key={r.id}
+                className="group rounded-2xl border border-border bg-bg/40 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary-200 hover:shadow-md"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold truncate">{r.guestName}</p>
+                    <p className="text-xs text-text-secondary mt-1">
+                      Room {r.roomNumbers} <span className="mx-1">·</span> until{" "}
+                      {new Date(r.checkOutDate).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-info/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-info">
+                    In-house
+                  </span>
+                </div>
+
                 <button
                   onClick={() =>
                     r.openFolioId
                       ? setOpenFolio({ folioId: r.openFolioId, reservationId: r.id })
                       : setError("No open folio found for this reservation.")
                   }
-                  className="btn-secondary w-full mt-3"
+                  className="btn-secondary w-full mt-4 transition-all duration-200 group-hover:border-primary-200"
                 >
                   View Folio
                 </button>
               </div>
             ))}
-            {inHouse.length === 0 && <p className="text-sm text-text-secondary">No guests currently in-house.</p>}
+            {inHouse.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-border px-4 py-8 text-center">
+                <p className="text-sm font-medium text-text-primary">No guests currently in-house</p>
+                <p className="text-xs text-text-secondary mt-1">Active stays will appear here.</p>
+              </div>
+            )}
           </div>
         </section>
       </div>

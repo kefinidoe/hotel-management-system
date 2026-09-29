@@ -68,6 +68,23 @@ export default function InventoryClient({
       .then(setItems);
   }
 
+  async function deleteItem(item: InventoryItemRow) {
+    if (
+      !confirm(
+        `Remove "${item.name}"? If it's never been purchased, wasted, adjusted, or used in a recipe, it's deleted for good. If it has any history, it's hidden instead so past records still make sense.`
+      )
+    ) {
+      return;
+    }
+    const res = await fetch(`/api/inventory/${item.id}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.error ?? "Could not remove this item.");
+      return;
+    }
+    refreshItems();
+  }
+
   const kpiCards = [
     { label: "Total Inventory Items", value: kpis.totalItems.toLocaleString(), icon: Package },
     { label: "Total Inventory Value", value: `KSh ${kpis.totalValue.toLocaleString()}`, icon: Wallet },
@@ -173,6 +190,12 @@ export default function InventoryClient({
                         className="text-primary-600 text-xs font-medium hover:underline"
                       >
                         Adjust
+                      </button>
+                      <button
+                        onClick={() => deleteItem(i)}
+                        className="text-danger text-xs font-medium hover:underline ml-3"
+                      >
+                        Delete
                       </button>
                     </td>
                   </tr>

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import { getServerSession, Session } from "next-auth";
 import { RoleName } from "@prisma/client";
 import { authOptions } from "@/lib/auth";
 
@@ -11,11 +11,8 @@ export async function requireAuth() {
   return session;
 }
 
-export function requireRole(
-  session: NonNullable<Awaited<ReturnType<typeof getServerSession>>>,
-  allowed: RoleName[]
-) {
-  const role = (session.user as any).role as RoleName;
+export function requireRole(session: Session, allowed: RoleName[]) {
+  const role = session.user.role;
   if (!allowed.includes(role)) {
     return NextResponse.json(
       { error: "You don't have permission to do that." },
