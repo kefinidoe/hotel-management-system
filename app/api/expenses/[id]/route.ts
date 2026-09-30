@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAuth, requireRole } from "@/lib/authz";
+import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
 
 // Approve or reject a pending expense. Only ADMIN/MANAGER can do this --
 // the person who submitted an expense can't also be the one who approves it.
@@ -8,7 +8,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
-  const forbidden = requireRole(auth, ["ADMIN", "MANAGER"]);
+  const forbidden = requireRole(auth, ROLE_GROUPS.MANAGEMENT);
   if (forbidden) return forbidden;
 
   const body = await req.json();

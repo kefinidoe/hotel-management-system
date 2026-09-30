@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAuth, requireRole } from "@/lib/authz";
+import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const auth = await requireAuth();
@@ -50,7 +50,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
-  const forbidden = requireRole(auth, ["ADMIN", "MANAGER"]);
+  const forbidden = requireRole(auth, ROLE_GROUPS.MANAGEMENT);
   if (forbidden) return forbidden;
 
   const body = await req.json();
@@ -103,7 +103,7 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
-  const forbidden = requireRole(auth, ["ADMIN", "MANAGER"]);
+  const forbidden = requireRole(auth, ROLE_GROUPS.MANAGEMENT);
   if (forbidden) return forbidden;
 
   const item = await prisma.inventoryItem.findUnique({ where: { id: params.id } });

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAuth, requireRole } from "@/lib/authz";
+import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
 
 // Edit a staff member's role, department, or active status. ADMIN only,
 // with two safety guards a real hotel system needs:
@@ -11,7 +11,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
-  const forbidden = requireRole(auth, ["ADMIN"]);
+  const forbidden = requireRole(auth, ROLE_GROUPS.STAFF_ADMIN);
   if (forbidden) return forbidden;
 
   const body = await req.json();

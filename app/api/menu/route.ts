@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/authz";
+import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
 import { computeAvailablePortions } from "@/lib/inventory";
 
 export async function GET() {
@@ -42,6 +42,9 @@ export async function GET() {
 export async function POST(req: Request) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+
+  const forbidden = requireRole(auth, ROLE_GROUPS.MANAGEMENT);
+  if (forbidden) return forbidden;
 
   const body = await req.json();
   const name = typeof body.name === "string" ? body.name.trim() : "";

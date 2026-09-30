@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { requireAuth, requireRole } from "@/lib/authz";
+import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
 
 // Same endpoint, two shapes: everyone logged in gets the lightweight list
 // (used for assignee dropdowns in Housekeeping/Maintenance/etc). Only an
@@ -42,7 +42,7 @@ export async function POST(req: Request) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
-  const forbidden = requireRole(auth, ["ADMIN"]);
+  const forbidden = requireRole(auth, ROLE_GROUPS.STAFF_ADMIN);
   if (forbidden) return forbidden;
 
   const body = await req.json();

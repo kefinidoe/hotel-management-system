@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAuth, requireRole } from "@/lib/authz";
+import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
 
 export async function GET(req: Request) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
-  const forbidden = requireRole(auth, ["ADMIN", "MANAGER", "ACCOUNTANT"]);
+  const forbidden = requireRole(auth, ROLE_GROUPS.FINANCIAL_REPORTS);
   if (forbidden) return forbidden;
 
   const { searchParams } = new URL(req.url);
