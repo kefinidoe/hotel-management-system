@@ -6,6 +6,9 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
+  const forbidden = requireRole(auth, ROLE_GROUPS.MANAGEMENT);
+  if (forbidden) return forbidden;
+
   const item = await prisma.inventoryItem.findUnique({
     where: { id: params.id },
     include: {

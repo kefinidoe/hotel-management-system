@@ -1,12 +1,12 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import StaffClient from "@/components/staff/StaffClient";
+import { requirePageRole } from "@/lib/page-auth";
+import { ROLE_GROUPS } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
 export default async function StaffPage() {
-  const session = await getServerSession(authOptions);
+  const session = await requirePageRole(ROLE_GROUPS.STAFF_VIEW);
 
   const staff = await prisma.user.findMany({
     select: {
@@ -31,8 +31,8 @@ export default async function StaffPage() {
   return (
     <StaffClient
       initialStaff={initialStaff}
-      currentUserId={(session?.user as any)?.id ?? null}
-      currentUserRole={(session?.user as any)?.role ?? null}
+      currentUserId={session.user.id}
+      currentUserRole={session.user.role}
     />
   );
 }

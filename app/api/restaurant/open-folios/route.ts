@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/authz";
+import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
 
 export async function GET() {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+
+  const forbidden = requireRole(auth, ROLE_GROUPS.RESTAURANT_POS);
+  if (forbidden) return forbidden;
 
   const folios = await prisma.folio.findMany({
     where: { isClosed: false, reservation: { status: "CHECKED_IN" } },

@@ -2,19 +2,23 @@
 
 import { Bell, HelpCircle, LogOut } from "lucide-react";
 import { signOut } from "next-auth/react";
+import type { RoleName } from "@prisma/client";
 import SearchBar from "@/components/SearchBar";
+import { hasRole, ROLE_GROUPS } from "@/lib/permissions";
 
 export default function Topbar({
   userName,
   userRole,
 }: {
   userName: string;
-  userRole: string;
+  userRole: RoleName;
 }) {
+  const canSearchGuests = hasRole(userRole, ROLE_GROUPS.FRONT_DESK);
+
   return (
     <header className="h-16 sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-border bg-surface/90 backdrop-blur px-6">
       <div className="flex-1 max-w-md">
-        <SearchBar />
+        {canSearchGuests && <SearchBar />}
       </div>
 
       <div className="flex items-center gap-4">

@@ -9,6 +9,9 @@ export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const forbidden = requireRole(session, ROLE_GROUPS.GUEST_STAYS);
+  if (forbidden) return forbidden;
+
   const { searchParams } = new URL(req.url);
   const from = searchParams.get("from");
   const to = searchParams.get("to");

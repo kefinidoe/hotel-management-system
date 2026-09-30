@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import FrontDeskClient from "@/components/frontdesk/FrontDeskClient";
+import { requirePageRole } from "@/lib/page-auth";
+import { ROLE_GROUPS } from "@/lib/permissions";
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +17,7 @@ function endOfToday() {
 }
 
 export default async function FrontDeskPage() {
+  const session = await requirePageRole(ROLE_GROUPS.FRONT_DESK);
   const todayStart = startOfToday();
   const todayEnd = endOfToday();
 
@@ -49,6 +52,7 @@ export default async function FrontDeskPage() {
 
   return (
     <FrontDeskClient
+      currentUserRole={session.user.role}
       arrivals={arrivals.map(serializeRes)}
       departures={departures.map(serializeRes)}
       inHouse={inHouse.map(serializeRes)}

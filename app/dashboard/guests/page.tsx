@@ -1,9 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import GuestsClient from "@/components/guests/GuestsClient";
+import { requirePageRole } from "@/lib/page-auth";
+import { ROLE_GROUPS } from "@/lib/permissions";
 
 export const dynamic = 'force-dynamic';
 
 export default async function GuestsPage() {
+  await requirePageRole(ROLE_GROUPS.GUEST_STAYS);
+
   const guests = await prisma.guest.findMany({
     where: { isArchived: false },
     orderBy: { createdAt: "desc" },

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { RoleName } from "@prisma/client";
 import {
   LayoutDashboard,
   CalendarRange,
@@ -16,51 +17,68 @@ import {
   Receipt,
   BarChart3,
   UserCog,
-  Settings,
   ChevronsLeft,
   ChevronsRight,
 } from "lucide-react";
 import clsx from "clsx";
+import { hasRole, ROLE_GROUPS } from "@/lib/permissions";
 
-type NavItem = { label: string; href: string; icon: React.ElementType };
+type NavItem = {
+  label: string;
+  href: string;
+  icon: React.ElementType;
+  roles: readonly RoleName[];
+};
 type NavGroup = { title: string; items: NavItem[] };
 
 const NAV: NavGroup[] = [
   {
     title: "Overview",
-    items: [{ label: "Dashboard", href: "/dashboard", icon: LayoutDashboard }],
+    items: [
+      {
+        label: "Dashboard",
+        href: "/dashboard",
+        icon: LayoutDashboard,
+        roles: ROLE_GROUPS.ALL_STAFF,
+      },
+    ],
   },
   {
     title: "Operations",
     items: [
-      { label: "Front Desk", href: "/dashboard/front-desk", icon: Users },
-      { label: "Reservations", href: "/dashboard/reservations", icon: CalendarRange },
-      { label: "Rooms", href: "/dashboard/rooms", icon: BedDouble },
-      { label: "Guests", href: "/dashboard/guests", icon: Contact },
-      { label: "Housekeeping", href: "/dashboard/housekeeping", icon: Sparkles },
-      { label: "Maintenance", href: "/dashboard/maintenance", icon: Wrench },
+      { label: "Front Desk", href: "/dashboard/front-desk", icon: Users, roles: ROLE_GROUPS.FRONT_DESK },
+      { label: "Reservations", href: "/dashboard/reservations", icon: CalendarRange, roles: ROLE_GROUPS.GUEST_STAYS },
+      { label: "Rooms", href: "/dashboard/rooms", icon: BedDouble, roles: ROLE_GROUPS.ALL_STAFF },
+      { label: "Guests", href: "/dashboard/guests", icon: Contact, roles: ROLE_GROUPS.GUEST_STAYS },
+      { label: "Housekeeping", href: "/dashboard/housekeeping", icon: Sparkles, roles: ROLE_GROUPS.HOUSEKEEPING },
+      { label: "Maintenance", href: "/dashboard/maintenance", icon: Wrench, roles: ROLE_GROUPS.MAINTENANCE },
     ],
   },
   {
     title: "Revenue",
     items: [
-      { label: "Restaurant", href: "/dashboard/restaurant", icon: UtensilsCrossed },
-      { label: "Inventory", href: "/dashboard/inventory", icon: Boxes },
-      { label: "Expenses", href: "/dashboard/expenses", icon: Receipt },
-      { label: "Reports", href: "/dashboard/reports", icon: BarChart3 },
+      { label: "Restaurant", href: "/dashboard/restaurant", icon: UtensilsCrossed, roles: ROLE_GROUPS.RESTAURANT_POS },
+      { label: "Inventory", href: "/dashboard/inventory", icon: Boxes, roles: ROLE_GROUPS.MANAGEMENT },
+      { label: "Expenses", href: "/dashboard/expenses", icon: Receipt, roles: ROLE_GROUPS.ALL_STAFF },
+      { label: "Reports", href: "/dashboard/reports", icon: BarChart3, roles: ROLE_GROUPS.FINANCIAL_REPORTS },
     ],
   },
   {
     title: "Administration",
     items: [
-      { label: "Staff", href: "/dashboard/staff", icon: UserCog },
+      { label: "Staff", href: "/dashboard/staff", icon: UserCog, roles: ROLE_GROUPS.STAFF_VIEW },
     ],
   },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ userRole }: { userRole: RoleName }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+
+  const visibleGroups = NAV.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => hasRole(userRole, item.roles)),
+  })).filter((group) => group.items.length > 0);
 
   return (
     <aside
@@ -76,7 +94,7 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-6">
-        {NAV.map((group) => (
+        {visibleGroups.map((group) => (
           <div key={group.title}>
             {!collapsed && (
               <p className="px-3 mb-1.5 text-xs font-medium uppercase tracking-wide text-sidebar-textMuted">

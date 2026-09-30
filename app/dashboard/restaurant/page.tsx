@@ -1,10 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { computeAvailablePortions } from "@/lib/inventory";
 import RestaurantClient from "@/components/restaurant/RestaurantClient";
+import { requirePageRole } from "@/lib/page-auth";
+import { ROLE_GROUPS } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
 export default async function RestaurantPage() {
+  const session = await requirePageRole(ROLE_GROUPS.RESTAURANT_POS);
+
   const categories = await prisma.menuCategory.findMany({
     include: {
       items: {
@@ -35,5 +39,5 @@ export default async function RestaurantPage() {
     }),
   }));
 
-  return <RestaurantClient menu={menu} />;
+  return <RestaurantClient menu={menu} currentUserRole={session.user.role} />;
 }

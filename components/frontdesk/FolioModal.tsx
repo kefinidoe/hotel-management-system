@@ -19,11 +19,13 @@ type PaymentMethod = { id: string; name: string };
 export default function FolioModal({
   folioId,
   reservationId,
+  canCheckout,
   onClose,
   onDone,
 }: {
   folioId: string;
   reservationId: string;
+  canCheckout: boolean;
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -175,7 +177,7 @@ export default function FolioModal({
               </form>
             )}
 
-            {!folio.isClosed && (
+            {!folio.isClosed && canCheckout && (
               <button onClick={completeCheckout} disabled={loading} className="btn-primary w-full">
                 {loading ? "Processing..." : "Complete Checkout"}
               </button>

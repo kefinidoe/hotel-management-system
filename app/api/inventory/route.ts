@@ -7,6 +7,9 @@ export async function GET(req: Request) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
+  const forbidden = requireRole(auth, ROLE_GROUPS.MANAGEMENT);
+  if (forbidden) return forbidden;
+
   const { searchParams } = new URL(req.url);
   const includeInactive = searchParams.get("includeInactive") === "true";
 

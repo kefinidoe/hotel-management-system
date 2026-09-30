@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Minus, Plus, Trash2, ShoppingCart, UtensilsCrossed, Settings2, X } from "lucide-react";
+import type { RoleName } from "@prisma/client";
 import clsx from "clsx";
+import { hasRole, ROLE_GROUPS } from "@/lib/permissions";
 
 type MenuItem = { id: string; name: string; price: number; availablePortions: number | null };
 type Category = { id: string; name: string; items: MenuItem[] };
@@ -25,7 +27,14 @@ function inputClass() {
   return "w-full rounded-xl border border-border bg-surface px-4 py-3 text-sm shadow-sm transition-all placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400";
 }
 
-export default function RestaurantClient({ menu }: { menu: Category[] }) {
+export default function RestaurantClient({
+  menu,
+  currentUserRole,
+}: {
+  menu: Category[];
+  currentUserRole: RoleName;
+}) {
+  const canManageMenu = hasRole(currentUserRole, ROLE_GROUPS.MANAGEMENT);
   const [activeCategory, setActiveCategory] = useState(menu[0]?.id ?? "");
   const [order, setOrder] = useState<OrderLine[]>([]);
   const [vatRate, setVatRate] = useState("0");
@@ -156,9 +165,11 @@ export default function RestaurantClient({ menu }: { menu: Category[] }) {
             payment at the counter.
           </p>
         </div>
-        <button onClick={() => setManageOpen(true)} className="btn-secondary rounded-xl shadow-sm hover:shadow-md transition-all">
-          <Settings2 size={16} /> Manage Menu
-        </button>
+        {canManageMenu && (
+          <button onClick={() => setManageOpen(true)} className="btn-secondary rounded-xl shadow-sm hover:shadow-md transition-all">
+            <Settings2 size={16} /> Manage Menu
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 items-start">
@@ -432,7 +443,9 @@ export default function RestaurantClient({ menu }: { menu: Category[] }) {
         </div>
       </div>
 
-      {manageOpen && <ManageMenuModal menu={menu} onClose={() => setManageOpen(false)} />}
+      {canManageMenu && manageOpen && (
+        <ManageMenuModal menu={menu} onClose={() => setManageOpen(false)} />
+      )}
     </div>
   );
 }

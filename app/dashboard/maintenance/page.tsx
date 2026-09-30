@@ -1,9 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import MaintenanceClient from "@/components/maintenance/MaintenanceClient";
+import { requirePageRole } from "@/lib/page-auth";
+import { ROLE_GROUPS } from "@/lib/permissions";
 
 export const dynamic = 'force-dynamic';
 
 export default async function MaintenancePage() {
+  await requirePageRole(ROLE_GROUPS.MAINTENANCE);
+
   const [tickets, rooms, staff] = await Promise.all([
     prisma.maintenanceTicket.findMany({
       include: { room: true, assignee: true },

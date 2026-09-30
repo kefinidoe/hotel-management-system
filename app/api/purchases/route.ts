@@ -6,6 +6,9 @@ export async function GET() {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
+  const forbidden = requireRole(auth, ROLE_GROUPS.MANAGEMENT);
+  if (forbidden) return forbidden;
+
   const purchases = await prisma.purchase.findMany({
     include: { inventoryItem: true, createdBy: true },
     orderBy: { purchaseDate: "desc" },

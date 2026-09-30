@@ -1,9 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import ReservationsClient from "@/components/reservations/ReservationsClient";
+import { requirePageRole } from "@/lib/page-auth";
+import { ROLE_GROUPS } from "@/lib/permissions";
 
 export const dynamic = 'force-dynamic';
 
 export default async function ReservationsPage() {
+  await requirePageRole(ROLE_GROUPS.GUEST_STAYS);
+
   const rooms = await prisma.room.findMany({
     include: { roomType: true },
     orderBy: { number: "asc" },

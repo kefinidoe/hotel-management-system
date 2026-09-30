@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { UserPlus } from "lucide-react";
+import type { RoleName } from "@prisma/client";
 import CreateReservationModal from "@/components/reservations/CreateReservationModal";
 import FolioModal from "./FolioModal";
+import { hasRole, ROLE_GROUPS } from "@/lib/permissions";
 
 type ResRow = {
   id: string;
@@ -18,12 +20,14 @@ type ResRow = {
 type Room = { id: string; number: string; roomTypeName: string; baseRate: number; isTwin: boolean };
 
 export default function FrontDeskClient({
+  currentUserRole,
   arrivals,
   departures,
   inHouse,
   availableRoomsCount,
   rooms,
 }: {
+  currentUserRole: RoleName;
   arrivals: ResRow[];
   departures: ResRow[];
   inHouse: ResRow[];
@@ -31,6 +35,7 @@ export default function FrontDeskClient({
   rooms: Room[];
 }) {
   const router = useRouter();
+  const canManageStays = hasRole(currentUserRole, ROLE_GROUPS.GUEST_STAYS);
   const [error, setError] = useState<string | null>(null);
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [openFolio, setOpenFolio] = useState<{ folioId: string; reservationId: string } | null>(null);
@@ -80,12 +85,14 @@ export default function FrontDeskClient({
           </div>
         </div>
 
-        <button
-          onClick={() => setWalkInOpen(true)}
-          className="btn-primary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
-        >
-          <UserPlus size={17} /> Walk-in
-        </button>
+        {canManageStays && (
+          <button
+            onClick={() => setWalkInOpen(true)}
+            className="btn-primary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+          >
+            <UserPlus size={17} /> Walk-in
+          </button>
+        )}
       </div>
 
       {error && (
@@ -124,13 +131,15 @@ export default function FrontDeskClient({
                   </span>
                 </div>
 
-                <button
-                  onClick={() => checkIn(r.id)}
-                  disabled={loadingId === r.id}
-                  className="btn-primary w-full mt-4 transition-all duration-200 group-hover:shadow-sm"
-                >
-                  {loadingId === r.id ? "Checking in..." : "Check In"}
-                </button>
+                {canManageStays && (
+                  <button
+                    onClick={() => checkIn(r.id)}
+                    disabled={loadingId === r.id}
+                    className="btn-primary w-full mt-4 transition-all duration-200 group-hover:shadow-sm"
+                  >
+                    {loadingId === r.id ? "Checking in..." : "Check In"}
+                  </button>
+                )}
               </div>
             ))}
             {arrivals.length === 0 && (
@@ -244,7 +253,7 @@ export default function FrontDeskClient({
         </section>
       </div>
 
-      {walkInOpen && rooms.length > 0 && (
+      {canManageStays && walkInOpen && rooms.length > 0 && (
         <CreateReservationModal
           rooms={rooms}
           defaultRoomId={rooms[0].id}
@@ -259,6 +268,7 @@ export default function FrontDeskClient({
         <FolioModal
           folioId={openFolio.folioId}
           reservationId={openFolio.reservationId}
+          canCheckout={canManageStays}
           onClose={() => setOpenFolio(null)}
           onDone={refresh}
         />
