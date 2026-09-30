@@ -179,6 +179,8 @@ async function main() {
       { name: "Beef Stew & Ugali", price: 550 },
       { name: "Grilled Chicken & Chips", price: 700 },
     ],
+    Dinner: [],
+    "Ala carte": [],
     Drinks: [
       { name: "Soda", price: 100 },
       { name: "Fresh Juice", price: 200 },
@@ -186,13 +188,15 @@ async function main() {
     ],
   };
   for (const [categoryName, items] of Object.entries(menu)) {
+    const categorySlug = categoryName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const categoryId = `seed-cat-${categorySlug}`;
     const category = await prisma.menuCategory.upsert({
-      where: { id: `seed-cat-${categoryName.toLowerCase()}` },
-      update: {},
-      create: { id: `seed-cat-${categoryName.toLowerCase()}`, name: categoryName },
+      where: { id: categoryId },
+      update: { name: categoryName },
+      create: { id: categoryId, name: categoryName },
     });
     for (const item of items) {
-      const id = `seed-item-${categoryName.toLowerCase()}-${item.name.toLowerCase().replace(/\s+/g, "-")}`;
+      const id = `seed-item-${categorySlug}-${item.name.toLowerCase().replace(/\s+/g, "-")}`;
       await prisma.menuItem.upsert({
         where: { id },
         update: {},

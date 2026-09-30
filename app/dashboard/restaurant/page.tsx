@@ -3,6 +3,7 @@ import { computeAvailablePortions } from "@/lib/inventory";
 import RestaurantClient from "@/components/restaurant/RestaurantClient";
 import { requirePageRole } from "@/lib/page-auth";
 import { ROLE_GROUPS } from "@/lib/permissions";
+import { sortMenuCategories } from "@/lib/menu-categories";
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +17,9 @@ export default async function RestaurantPage() {
         include: { recipe: { include: { ingredients: { include: { inventoryItem: true } } } } },
       },
     },
-    orderBy: { name: "asc" },
   });
 
-  const menu = categories.map((c) => ({
+  const menu = sortMenuCategories(categories).map((c) => ({
     id: c.id,
     name: c.name,
     items: c.items.map((i) => {

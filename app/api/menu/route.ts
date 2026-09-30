@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
 import { computeAvailablePortions } from "@/lib/inventory";
+import { sortMenuCategories } from "@/lib/menu-categories";
 
 export async function GET() {
   const auth = await requireAuth();
@@ -20,7 +21,7 @@ export async function GET() {
   });
 
   return NextResponse.json(
-    categories.map((c) => ({
+    sortMenuCategories(categories).map((c) => ({
       id: c.id,
       name: c.name,
       items: c.items.map((i) => {

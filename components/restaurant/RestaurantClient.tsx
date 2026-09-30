@@ -5,6 +5,7 @@ import { Minus, Plus, Trash2, ShoppingCart, UtensilsCrossed, Settings2, X } from
 import type { RoleName } from "@prisma/client";
 import clsx from "clsx";
 import { hasRole, ROLE_GROUPS } from "@/lib/permissions";
+import { isRequiredMenuCategory } from "@/lib/menu-categories";
 
 type MenuItem = { id: string; name: string; price: number; availablePortions: number | null };
 type Category = { id: string; name: string; items: MenuItem[] };
@@ -496,6 +497,32 @@ function ManageMenuModal({ menu, onClose }: { menu: Category[]; onClose: () => v
     setMsg("Item removed. Refresh the page to update the POS.");
   }
 
+  async function removeCategory(category: Category) {
+    if (
+      !confirm(
+        `Delete the empty category "${category.name}"? Required categories cannot be deleted.`
+      )
+    ) {
+      return;
+    }
+
+    setLoading(true);
+    setErr(null);
+    setMsg(null);
+    const res = await fetch(`/api/menu/categories/${category.id}`, {
+      method: "DELETE",
+    });
+    const data = await res.json().catch(() => ({}));
+    setLoading(false);
+    if (!res.ok) {
+      setErr(data.error || "Could not delete the category.");
+      return;
+    }
+
+    setMsg(`Category "${category.name}" deleted. Reloading the menu...`);
+    window.setTimeout(() => window.location.reload(), 500);
+  }
+
   return (
     <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
       <div className="card w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl border border-border bg-surface p-6 shadow-2xl">
@@ -559,6 +586,43 @@ function ManageMenuModal({ menu, onClose }: { menu: Category[]; onClose: () => v
             Add Category
           </button>
         </form>
+
+        <div className="border-t border-border pt-4 mt-4 space-y-2">
+          <div>
+            <p className="text-sm font-medium">Manage categories</p>
+            <p className="text-xs text-text-muted mt-1">
+              Empty extra categories can be deleted. Breakfast, Lunch, Dinner, and Ala carte are required.
+            </p>
+          </div>
+          {menu.map((category) => {
+            const required = isRequiredMenuCategory(category.name);
+            return (
+              <div
+                key={category.id}
+                className="flex items-center justify-between gap-3 border border-border rounded-control px-3 py-2 text-sm"
+              >
+                <div>
+                  <p className="font-medium">{category.name}</p>
+                  <p className="text-xs text-text-muted">
+                    {category.items.length} active item{category.items.length === 1 ? "" : "s"}
+                  </p>
+                </div>
+                {required ? (
+                  <span className="badge bg-primary-50 text-primary-700">Required</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => removeCategory(category)}
+                    disabled={loading}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-danger hover:underline disabled:opacity-50"
+                  >
+                    <Trash2 size={13} /> Delete
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
 
         <div className="border-t border-border pt-4 mt-4 space-y-3">
           <p className="text-sm font-medium">Current items</p>
