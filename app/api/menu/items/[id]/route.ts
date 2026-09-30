@@ -11,15 +11,25 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   const forbidden = requireRole(session, ROLE_GROUPS.MANAGEMENT);
   if (forbidden) return forbidden;
 
-
-
   const body = await req.json();
+  const name =
+    body.name === undefined
+      ? undefined
+      : typeof body.name === "string"
+      ? body.name.trim()
+      : "";
+  const price = body.price === undefined ? undefined : Number(body.price);
+
+  if (body.name !== undefined && !name) {
+    return NextResponse.json({ error: "Item name is required." }, { status: 400 });
+  }
+  if (price !== undefined && (!Number.isFinite(price) || price < 0)) {
+    return NextResponse.json({ error: "Enter a valid non-negative price." }, { status: 400 });
+  }
+
   const item = await prisma.menuItem.update({
     where: { id: params.id },
-    data: {
-      name: body.name ?? undefined,
-      price: body.price !== undefined ? Number(body.price) : undefined,
-    },
+    data: { name, price },
   });
   return NextResponse.json({ id: item.id });
 }

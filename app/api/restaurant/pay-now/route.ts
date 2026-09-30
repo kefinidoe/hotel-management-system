@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { requireRole, ROLE_GROUPS } from "@/lib/authz";
-import { readCart, round2, cartTotal } from "@/lib/restaurant";
+import { cartTotal, readCartRequest, resolveCartLines, round2 } from "@/lib/restaurant";
 import { deductRecipeStock } from "@/lib/inventory";
 
 const WALK_IN_GUEST = "Walk-in Guest";
@@ -21,73 +21,96 @@ export async function POST(req: Request) {
   const customerPhone = typeof body.customerPhone === "string" ? body.customerPhone.trim() : "";
   const reference = typeof body.reference === "string" ? body.reference.trim() : "";
   const tableNumber = typeof body.tableNumber === "string" ? body.tableNumber.trim() : "";
-  const vatRate = Number(body.vatRate) || 0;
-  const lines = readCart(body.items);
 
-  if (lines.length === 0) {
-    return NextResponse.json({ error: "Add at least one item to the order." }, { status: 400 });
-  }
   if (!paymentMethodId) {
     return NextResponse.json({ error: "Choose how the guest is paying." }, { status: 400 });
   }
 
-  const method = await prisma.paymentMethod.findUnique({ where: { id: paymentMethodId } });
-  if (!method) return NextResponse.json({ error: "Payment method not found." }, { status: 404 });
+  let requestedItems: ReturnType<typeof readCartRequest>;
+  try {
+    requestedItems = readCartRequest(body.items);
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "The order is invalid." },
+      { status: 400 }
+    );
+  }
+  if (requestedItems.length === 0) {
+    return NextResponse.json({ error: "Add at least one item to the order." }, { status: 400 });
+  }
 
   const prefix = tableNumber ? `Restaurant (Table ${tableNumber})` : "Restaurant";
-  const total = cartTotal(lines, vatRate);
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      let guest = customerPhone
-        ? await tx.guest.findFirst({ where: { phone: customerPhone } })
-        : null;
+    const result = await prisma.$transaction(
+      async (tx) => {
+        const lines = await resolveCartLines(tx, requestedItems);
+        const total = cartTotal(lines);
 
-      if (!guest && customerName) {
-        guest = await tx.guest.create({
-          data: { fullName: customerName, phone: customerPhone || null },
+        const method = await tx.paymentMethod.findFirst({
+          where: { id: paymentMethodId, isActive: true },
         });
-      }
-      if (!guest) {
-        guest =
-          (await tx.guest.findFirst({ where: { fullName: WALK_IN_GUEST } })) ??
-          (await tx.guest.create({ data: { fullName: WALK_IN_GUEST } }));
-      }
+        if (!method) throw new Error("That payment method is unavailable.");
 
-      const folio = await tx.folio.create({ data: { guestId: guest.id, isClosed: true } });
+        let guest = customerPhone
+          ? await tx.guest.findFirst({ where: { phone: customerPhone } })
+          : null;
 
-      for (const line of lines) {
-        await tx.folioItem.create({
+        if (!guest && customerName) {
+          guest = await tx.guest.create({
+            data: { fullName: customerName, phone: customerPhone || null },
+          });
+        }
+        if (!guest) {
+          guest =
+            (await tx.guest.findFirst({ where: { fullName: WALK_IN_GUEST } })) ??
+            (await tx.guest.create({ data: { fullName: WALK_IN_GUEST } }));
+        }
+
+        const folio = await tx.folio.create({ data: { guestId: guest.id, isClosed: true } });
+
+        for (const line of lines) {
+          await tx.folioItem.create({
+            data: {
+              folioId: folio.id,
+              type: "RESTAURANT",
+              description: `${prefix} — ${line.name}`,
+              quantity: line.quantity,
+              unitPrice: line.unitPrice,
+              taxRate: 0,
+              total: round2(line.quantity * line.unitPrice),
+            },
+          });
+        }
+
+        await tx.payment.create({
           data: {
             folioId: folio.id,
-            type: "RESTAURANT",
-            description: `${prefix} — ${line.name}`,
-            quantity: line.quantity,
-            unitPrice: line.unitPrice,
-            taxRate: vatRate,
-            total: round2(line.quantity * line.unitPrice * (1 + vatRate / 100)),
+            paymentMethodId,
+            amount: total,
+            reference: reference || null,
+            status: "COMPLETED",
+            cashierId: session.user.id,
           },
         });
-      }
 
-      await tx.payment.create({
-        data: {
+        await deductRecipeStock(tx, lines, `Sold to ${guest.fullName}`, session.user.id);
+
+        return {
+          guestName: guest.fullName,
           folioId: folio.id,
-          paymentMethodId,
-          amount: total,
-          reference: reference || null,
-          status: "COMPLETED",
-          cashierId: session.user.id,
-        },
-      });
+          total,
+          method: method.name,
+        };
+      },
+      { timeout: 15000 }
+    );
 
-      await deductRecipeStock(tx, lines, `Sold to ${guest.fullName}`, session.user.id);
-
-      return { guestName: guest.fullName, folioId: folio.id };
-    }, { timeout: 15000 });
-
-    return NextResponse.json({ ok: true, ...result, total, method: method.name }, { status: 201 });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Could not complete the order." }, { status: 400 });
+    return NextResponse.json({ ok: true, ...result }, { status: 201 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Could not complete the order." },
+      { status: 400 }
+    );
   }
 }

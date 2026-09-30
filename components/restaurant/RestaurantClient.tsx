@@ -37,7 +37,6 @@ export default function RestaurantClient({
   const canManageMenu = hasRole(currentUserRole, ROLE_GROUPS.MANAGEMENT);
   const [activeCategory, setActiveCategory] = useState(menu[0]?.id ?? "");
   const [order, setOrder] = useState<OrderLine[]>([]);
-  const [vatRate, setVatRate] = useState("0");
   const [mode, setMode] = useState<"ROOM" | "PAY">("ROOM");
   const [tableNumber, setTableNumber] = useState("");
 
@@ -82,8 +81,7 @@ export default function RestaurantClient({
   }, [loadActivity, loadFolios]);
 
   const subtotal = order.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
-  const vat = Number(vatRate) || 0;
-  const total = subtotal * (1 + vat / 100);
+  const total = subtotal;
 
   function addItem(item: MenuItem) {
     setSuccess(null);
@@ -127,8 +125,8 @@ export default function RestaurantClient({
       mode === "ROOM" ? "/api/restaurant/charge-to-room" : "/api/restaurant/pay-now";
     const payload =
       mode === "ROOM"
-        ? { items: order, folioId, tableNumber, vatRate: vat }
-        : { items: order, paymentMethodId: methodId, customerName, reference, tableNumber, vatRate: vat };
+        ? { items: order, folioId, tableNumber }
+        : { items: order, paymentMethodId: methodId, customerName, reference, tableNumber };
 
     const res = await fetch(endpoint, {
       method: "POST",
@@ -271,16 +269,6 @@ export default function RestaurantClient({
               <div className="flex justify-between">
                 <span className="text-text-secondary">Subtotal</span>
                 <span>{money(subtotal)}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-text-secondary">VAT %</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={vatRate}
-                  onChange={(e) => setVatRate(e.target.value)}
-                  className="w-24 rounded-control border border-border px-2 py-1 text-sm text-right"
-                />
               </div>
               <div className="flex justify-between font-bold text-base pt-3 border-t border-border">
                 <span>Total</span>
