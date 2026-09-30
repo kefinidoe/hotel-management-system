@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
+import { folioTotals } from "@/lib/billing";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const auth = await requireAuth();
@@ -18,7 +19,10 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       },
       folios: {
         orderBy: { createdAt: "desc" },
-        include: { items: true, payments: true },
+        include: {
+          items: true,
+          payments: { where: { status: "COMPLETED" } },
+        },
       },
     },
   });
@@ -43,15 +47,17 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       checkOutDate: r.checkOutDate.toISOString(),
       rooms: r.rooms.map((rr) => ({ roomNumber: rr.room.number, rate: Number(rr.rate) })),
     })),
-    folios: guest.folios.map((f) => {
-      const itemsTotal = f.items.reduce((s, i) => s + Number(i.total), 0);
-      const paidTotal = f.payments.reduce((s, p) => s + Number(p.amount), 0);
+    folios: guest.folios.map((folio) => {
+      const totals = folioTotals(
+        folio.items.map((item) => Number(item.total)),
+        folio.payments.map((payment) => Number(payment.amount))
+      );
       return {
-        id: f.id,
-        isClosed: f.isClosed,
-        total: itemsTotal,
-        paid: paidTotal,
-        balance: itemsTotal - paidTotal,
+        id: folio.id,
+        isClosed: folio.isClosed,
+        total: totals.required,
+        paid: totals.paid,
+        balance: totals.balance,
       };
     }),
   });

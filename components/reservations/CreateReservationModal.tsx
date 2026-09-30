@@ -5,7 +5,6 @@ import { X } from "lucide-react";
 import { addDays, isoDay } from "@/lib/dates";
 
 type Room = { id: string; number: string; roomTypeName: string; baseRate: number; isTwin: boolean };
-type PaymentMethod = { id: string; name: string };
 type RoomTypeTariff = { id: string; name: string; baseRate: number | string; mealPlan: "BED_ONLY" | "BED_AND_BREAKFAST" };
 
 type Occupancy = "SINGLE" | "DOUBLE";
@@ -30,8 +29,8 @@ export default function CreateReservationModal({
   onCreated: (reservationId: string) => void;
   onError: (e: string | null) => void;
 }) {
-  // Matches Axis Hotel's paper check-in card: guest identity + registration,
-  // stay dates, room/tariff, and payment mode -- all captured up front.
+  // Matches Axis Hotel's paper registration card: guest identity,
+  // stay dates, and room/tariff. Actual payment is recorded at check-in.
   const [guestName, setGuestName] = useState("");
   const [guestPhone, setGuestPhone] = useState("");
   const [idNumber, setIdNumber] = useState("");
@@ -44,16 +43,11 @@ export default function CreateReservationModal({
   const [mealPlan, setMealPlan] = useState<MealPlan>("BED_ONLY");
   const [adults, setAdults] = useState("1");
   const [children, setChildren] = useState("0");
-  const [paymentMode, setPaymentMode] = useState("");
   const [discount, setDiscount] = useState("");
-  const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [tariffs, setTariffs] = useState<RoomTypeTariff[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/api/payment-methods")
-      .then((r) => r.json())
-      .then((m) => setMethods(m));
     fetch("/api/room-types")
       .then((r) => r.json())
       .then((t) => setTariffs(t));
@@ -94,7 +88,6 @@ export default function CreateReservationModal({
         rate,
         adults: Number(adults) || 1,
         children: Number(children) || 0,
-        paymentMode: paymentMode || null,
         discount: discount ? Number(discount) : null,
       }),
     });
@@ -223,18 +216,6 @@ export default function CreateReservationModal({
               <label className="block text-sm font-medium mb-1.5">Discount (KSh, optional)</label>
               <input type="number" value={discount} onChange={(e) => setDiscount(e.target.value)} className={inputClass()} />
             </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1.5">Payment Mode</label>
-            <select value={paymentMode} onChange={(e) => setPaymentMode(e.target.value)} className={inputClass()}>
-              <option value="">Not specified</option>
-              {methods.map((m) => (
-                <option key={m.id} value={m.name}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
           </div>
 
           <button type="submit" disabled={loading || !matchedTariff} className="btn-primary w-full mt-2">

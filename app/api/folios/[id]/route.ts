@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
+import { folioTotals } from "@/lib/billing";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const auth = await requireAuth();
@@ -14,33 +15,41 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     include: {
       guest: true,
       items: { orderBy: { createdAt: "asc" } },
-      payments: { include: { paymentMethod: true }, orderBy: { createdAt: "asc" } },
+      payments: {
+        where: { status: "COMPLETED" },
+        include: { paymentMethod: true },
+        orderBy: { createdAt: "asc" },
+      },
     },
   });
   if (!folio) return NextResponse.json({ error: "Folio not found." }, { status: 404 });
 
-  const itemsTotal = folio.items.reduce((s, i) => s + Number(i.total), 0);
-  const paidTotal = folio.payments.reduce((s, p) => s + Number(p.amount), 0);
+  const totals = folioTotals(
+    folio.items.map((item) => Number(item.total)),
+    folio.payments.map((payment) => Number(payment.amount))
+  );
 
   return NextResponse.json({
     id: folio.id,
     guestName: folio.guest.fullName,
     isClosed: folio.isClosed,
-    items: folio.items.map((i) => ({
-      id: i.id,
-      description: i.description,
-      quantity: i.quantity,
-      unitPrice: Number(i.unitPrice),
-      total: Number(i.total),
+    items: folio.items.map((item) => ({
+      id: item.id,
+      description: item.description,
+      quantity: item.quantity,
+      unitPrice: Number(item.unitPrice),
+      total: Number(item.total),
     })),
-    payments: folio.payments.map((p) => ({
-      id: p.id,
-      amount: Number(p.amount),
-      method: p.paymentMethod.name,
-      reference: p.reference,
+    payments: folio.payments.map((payment) => ({
+      id: payment.id,
+      amount: Number(payment.amount),
+      method: payment.paymentMethod.name,
+      reference: payment.reference,
+      createdAt: payment.createdAt.toISOString(),
     })),
-    total: itemsTotal,
-    paid: paidTotal,
-    balance: itemsTotal - paidTotal,
+    required: totals.required,
+    total: totals.required,
+    paid: totals.paid,
+    balance: totals.balance,
   });
 }

@@ -71,7 +71,6 @@ export async function POST(req: Request) {
     children,
     source,
     notes,
-    paymentMode,
     discount,
   } = body;
 
@@ -145,7 +144,6 @@ export async function POST(req: Request) {
       source: source || "WALK_IN",
       adults: adults || 1,
       children: children || 0,
-      paymentMode: paymentMode || null,
       discount: discount ? Number(discount) : null,
       notes: notes || null,
       createdById: session.user.id,

@@ -6,6 +6,7 @@ import { UserPlus } from "lucide-react";
 import type { RoleName } from "@prisma/client";
 import CreateReservationModal from "@/components/reservations/CreateReservationModal";
 import FolioModal from "./FolioModal";
+import CheckInModal from "./CheckInModal";
 import { hasRole, ROLE_GROUPS } from "@/lib/permissions";
 
 type ResRow = {
@@ -16,8 +17,18 @@ type ResRow = {
   checkOutDate: string;
   roomNumbers: string;
   openFolioId: string | null;
+  requiredAmount: number;
+  paidAmount: number;
+  balance: number;
 };
 type Room = { id: string; number: string; roomTypeName: string; baseRate: number; isTwin: boolean };
+
+function money(value: number) {
+  return `KSh ${value.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
 
 export default function FrontDeskClient({
   currentUserRole,
@@ -36,30 +47,14 @@ export default function FrontDeskClient({
 }) {
   const router = useRouter();
   const canManageStays = hasRole(currentUserRole, ROLE_GROUPS.GUEST_STAYS);
+  const canOverrideBalance = hasRole(currentUserRole, ROLE_GROUPS.MANAGEMENT);
   const [error, setError] = useState<string | null>(null);
   const [walkInOpen, setWalkInOpen] = useState(false);
+  const [checkInReservation, setCheckInReservation] = useState<ResRow | null>(null);
   const [openFolio, setOpenFolio] = useState<{ folioId: string; reservationId: string } | null>(null);
-  const [loadingId, setLoadingId] = useState<string | null>(null);
 
   function refresh() {
     router.refresh();
-  }
-
-  async function checkIn(reservationId: string) {
-    setLoadingId(reservationId);
-    setError(null);
-    const res = await fetch("/api/check-in", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reservationId }),
-    });
-    setLoadingId(null);
-    if (!res.ok) {
-      const data = await res.json();
-      setError(data.error || "Could not check in guest.");
-      return;
-    }
-    refresh();
   }
 
   return (
@@ -131,13 +126,20 @@ export default function FrontDeskClient({
                   </span>
                 </div>
 
+                <div className="mt-3 flex items-center justify-between rounded-control bg-surface px-3 py-2 text-xs">
+                  <span className="text-text-secondary">Accommodation required</span>
+                  <span className="font-semibold">{money(r.requiredAmount)}</span>
+                </div>
+
                 {canManageStays && (
                   <button
-                    onClick={() => checkIn(r.id)}
-                    disabled={loadingId === r.id}
+                    onClick={() => {
+                      setError(null);
+                      setCheckInReservation(r);
+                    }}
                     className="btn-primary w-full mt-4 transition-all duration-200 group-hover:shadow-sm"
                   >
-                    {loadingId === r.id ? "Checking in..." : "Check In"}
+                    Check In
                   </button>
                 )}
               </div>
@@ -178,6 +180,23 @@ export default function FrontDeskClient({
                   <span className="shrink-0 rounded-full bg-champagne-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-champagne-500">
                     Departure
                   </span>
+                </div>
+
+                <div className="mt-3 grid grid-cols-3 gap-2 rounded-control bg-surface px-3 py-2 text-xs">
+                  <div>
+                    <p className="text-text-muted">Required</p>
+                    <p className="font-medium">{money(r.requiredAmount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-text-muted">Paid</p>
+                    <p className="font-medium text-success">{money(r.paidAmount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-text-muted">Balance</p>
+                    <p className={r.balance > 0 ? "font-semibold text-danger" : "font-semibold text-success"}>
+                      {money(r.balance)}
+                    </p>
+                  </div>
                 </div>
 
                 <button
@@ -231,6 +250,23 @@ export default function FrontDeskClient({
                   </span>
                 </div>
 
+                <div className="mt-3 grid grid-cols-3 gap-2 rounded-control bg-surface px-3 py-2 text-xs">
+                  <div>
+                    <p className="text-text-muted">Required</p>
+                    <p className="font-medium">{money(r.requiredAmount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-text-muted">Paid</p>
+                    <p className="font-medium text-success">{money(r.paidAmount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-text-muted">Balance</p>
+                    <p className={r.balance > 0 ? "font-semibold text-danger" : "font-semibold text-success"}>
+                      {money(r.balance)}
+                    </p>
+                  </div>
+                </div>
+
                 <button
                   onClick={() =>
                     r.openFolioId
@@ -264,11 +300,23 @@ export default function FrontDeskClient({
         />
       )}
 
+      {checkInReservation && (
+        <CheckInModal
+          reservation={checkInReservation}
+          onClose={() => setCheckInReservation(null)}
+          onCheckedIn={(folioId) => {
+            refresh();
+            setOpenFolio({ folioId, reservationId: checkInReservation.id });
+          }}
+        />
+      )}
+
       {openFolio && (
         <FolioModal
           folioId={openFolio.folioId}
           reservationId={openFolio.reservationId}
           canCheckout={canManageStays}
+          canOverrideBalance={canOverrideBalance}
           onClose={() => setOpenFolio(null)}
           onDone={refresh}
         />
