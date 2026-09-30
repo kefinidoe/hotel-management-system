@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/authz";
+
+export const dynamic = "force-dynamic";
 
 function startOfToday() {
   const d = new Date();
@@ -8,6 +11,9 @@ function startOfToday() {
 }
 
 export async function GET() {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const items = await prisma.folioItem.findMany({
     where: { type: "RESTAURANT" },
     include: {

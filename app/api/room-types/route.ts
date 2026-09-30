@@ -5,6 +5,9 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/authz";
 
 export async function GET() {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const roomTypes = await prisma.roomType.findMany({ orderBy: { name: "asc" } });
   return NextResponse.json(roomTypes.map((rt) => ({ ...rt, baseRate: Number(rt.baseRate) })));
 }
