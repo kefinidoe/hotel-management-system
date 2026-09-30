@@ -115,7 +115,13 @@ export default function ReservationsClient({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "CANCELLED" }),
     });
-    if (res.ok) load();
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.error || "Could not cancel the reservation.");
+      return;
+    }
+    setError(null);
+    load();
   }
 
   return (
