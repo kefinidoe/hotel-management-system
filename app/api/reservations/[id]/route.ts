@@ -33,7 +33,8 @@ async function retryWriteConflict<T>(operation: () => Promise<T>): Promise<T> {
   throw new Error("Reservation update retry limit reached.");
 }
 
-export async function PUT(req: Request, { params }: { params: { id: string } }) {
+export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -72,7 +73,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
           `;
 
           const reservation = await tx.reservation.findUnique({
-            where: { id: params.id },
+            where: { id },
             include: { rooms: { include: { room: true } } },
           });
           if (!reservation) throw new ReservationUpdateError("Reservation not found.", 404);

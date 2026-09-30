@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
 
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
@@ -15,7 +16,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     ingredients?: { inventoryItemId: string; quantity: number }[];
   };
 
-  const recipe = await prisma.recipe.findUnique({ where: { id: params.id } });
+  const recipe = await prisma.recipe.findUnique({ where: { id } });
   if (!recipe) return NextResponse.json({ error: "Recipe not found." }, { status: 404 });
 
   const updated = await prisma.$transaction(async (tx) => {
@@ -40,13 +41,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   return NextResponse.json(updated);
 }
 
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
   const forbidden = requireRole(auth, ROLE_GROUPS.MANAGEMENT);
   if (forbidden) return forbidden;
 
-  await prisma.recipe.delete({ where: { id: params.id } });
+  await prisma.recipe.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

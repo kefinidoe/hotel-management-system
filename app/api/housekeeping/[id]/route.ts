@@ -11,7 +11,8 @@ const ROOM_STATUS_FOR: Record<string, string> = {
   READY: "AVAILABLE",
 };
 
-export async function PUT(req: Request, { params }: { params: { id: string } }) {
+export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -19,7 +20,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   if (forbidden) return forbidden;  
   const body = await req.json();
   const task = await prisma.housekeepingTask.update({
-    where: { id: params.id },
+    where: { id },
     data: {
       status: body.status,
       assigneeId: body.assigneeId ?? undefined,

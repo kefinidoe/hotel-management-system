@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
 import { folioTotals } from "@/lib/billing";
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
@@ -11,7 +12,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   if (forbidden) return forbidden;
 
   const folio = await prisma.folio.findUnique({
-    where: { id: params.id },
+    where: { id },
     include: {
       guest: true,
       items: { orderBy: { createdAt: "asc" } },

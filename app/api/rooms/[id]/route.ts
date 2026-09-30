@@ -4,7 +4,8 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { requireRole, ROLE_GROUPS } from "@/lib/authz";
 
-export async function PUT(req: Request, { params }: { params: { id: string } }) {
+export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -15,7 +16,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 
   const body = await req.json();
   const room = await prisma.room.update({
-    where: { id: params.id },
+    where: { id },
     data: {
       number: body.number,
       floor: body.floor ?? null,
@@ -28,7 +29,8 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   return NextResponse.json(room);
 }
 
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -37,7 +39,7 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
 
    
   try {
-    await prisma.room.delete({ where: { id: params.id } });
+    await prisma.room.delete({ where: { id } });
     return NextResponse.json({ ok: true });
   } catch {
     return NextResponse.json(

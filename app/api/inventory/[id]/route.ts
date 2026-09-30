@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
@@ -10,7 +11,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   if (forbidden) return forbidden;
 
   const item = await prisma.inventoryItem.findUnique({
-    where: { id: params.id },
+    where: { id },
     include: {
       stockMovements: { orderBy: { createdAt: "desc" }, take: 50, include: { user: true } },
       recipeIngredients: { include: { recipe: { include: { menuItem: true } } } },
@@ -49,7 +50,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
 // Handles both editing basic fields and a manual stock adjustment
 // (pass `newQuantity` + `reason` to trigger an adjustment + audit trail).
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
@@ -57,7 +59,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (forbidden) return forbidden;
 
   const body = await req.json();
-  const item = await prisma.inventoryItem.findUnique({ where: { id: params.id } });
+  const item = await prisma.inventoryItem.findUnique({ where: { id } });
   if (!item) return NextResponse.json({ error: "Item not found." }, { status: 404 });
 
   if (body.newQuantity !== undefined) {
@@ -102,30 +104,31 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 // history is deactivated instead: hidden from the active list, but every
 // past purchase/wastage/movement record that points at it stays intact
 // and still makes sense.
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
   const forbidden = requireRole(auth, ROLE_GROUPS.MANAGEMENT);
   if (forbidden) return forbidden;
 
-  const item = await prisma.inventoryItem.findUnique({ where: { id: params.id } });
+  const item = await prisma.inventoryItem.findUnique({ where: { id } });
   if (!item) return NextResponse.json({ error: "Item not found." }, { status: 404 });
 
   const [purchaseCount, wastageCount, movementCount, recipeCount] = await Promise.all([
-    prisma.purchase.count({ where: { inventoryItemId: params.id } }),
-    prisma.wastage.count({ where: { inventoryItemId: params.id } }),
-    prisma.stockMovement.count({ where: { inventoryItemId: params.id } }),
-    prisma.recipeIngredient.count({ where: { inventoryItemId: params.id } }),
+    prisma.purchase.count({ where: { inventoryItemId: id } }),
+    prisma.wastage.count({ where: { inventoryItemId: id } }),
+    prisma.stockMovement.count({ where: { inventoryItemId: id } }),
+    prisma.recipeIngredient.count({ where: { inventoryItemId: id } }),
   ]);
 
   const hasHistory = purchaseCount > 0 || wastageCount > 0 || movementCount > 0 || recipeCount > 0;
 
   if (!hasHistory) {
-    await prisma.inventoryItem.delete({ where: { id: params.id } });
+    await prisma.inventoryItem.delete({ where: { id } });
     return NextResponse.json({ mode: "deleted" });
   }
 
-  await prisma.inventoryItem.update({ where: { id: params.id }, data: { isActive: false } });
+  await prisma.inventoryItem.update({ where: { id }, data: { isActive: false } });
   return NextResponse.json({ mode: "deactivated" });
 }

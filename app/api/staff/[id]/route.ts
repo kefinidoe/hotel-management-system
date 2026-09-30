@@ -7,7 +7,8 @@ import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
 //  1. You can't lock yourself out (deactivate or demote your own account).
 //  2. You can't leave the hotel with zero ADMIN accounts (demoting or
 //     deactivating the last remaining ADMIN is blocked).
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
@@ -15,7 +16,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (forbidden) return forbidden;
 
   const body = await req.json();
-  const target = await prisma.user.findUnique({ where: { id: params.id } });
+  const target = await prisma.user.findUnique({ where: { id } });
   if (!target) return NextResponse.json({ error: "Staff member not found." }, { status: 404 });
 
   const isSelf = target.id === auth.user.id;
@@ -42,7 +43,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
 
   const updated = await prisma.user.update({
-    where: { id: params.id },
+    where: { id },
     data: {
       role: body.role ?? undefined,
       department: body.department ?? undefined,

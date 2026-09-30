@@ -4,7 +4,8 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { requireRole, ROLE_GROUPS } from "@/lib/authz";
 
-export async function PUT(req: Request, { params }: { params: { id: string } }) {
+export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -13,7 +14,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 
   const body = await req.json();
   const ticket = await prisma.maintenanceTicket.update({
-    where: { id: params.id },
+    where: { id },
     data: {
       status: body.status ?? undefined,
       assigneeId: body.assigneeId ?? undefined,

@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
 import { folioTotals } from "@/lib/billing";
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
@@ -11,7 +12,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   if (forbidden) return forbidden;
 
   const guest = await prisma.guest.findUnique({
-    where: { id: params.id },
+    where: { id },
     include: {
       reservations: {
         orderBy: { checkInDate: "desc" },
@@ -66,7 +67,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 // Archive or restore a guest. This NEVER deletes anything — it only flips a
 // flag that hides the guest from the default list. Their reservations,
 // folios, and payments are untouched either way, forever.
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
@@ -81,7 +83,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   // Guard: don't allow archiving a guest who is currently checked in.
   if (body.isArchived) {
     const activeStay = await prisma.reservation.findFirst({
-      where: { guestId: params.id, status: "CHECKED_IN" },
+      where: { guestId: id, status: "CHECKED_IN" },
     });
     if (activeStay) {
       return NextResponse.json(
@@ -92,7 +94,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
 
   const guest = await prisma.guest.update({
-    where: { id: params.id },
+    where: { id },
     data: { isArchived: body.isArchived },
   });
 
