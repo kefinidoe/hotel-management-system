@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { RoleName } from "@prisma/client";
@@ -87,10 +88,29 @@ export default function Sidebar({ userRole }: { userRole: RoleName }) {
         collapsed ? "w-[76px]" : "w-64"
       )}
     >
-      <div className="h-16 flex items-center px-4 border-b border-sidebar-border">
-        {!collapsed && (
-          <span className="font-semibold text-sidebar-text tracking-tight">AXIS HOTEL</span>
+      <div
+        className={clsx(
+          "flex items-center justify-center border-b border-sidebar-border transition-all",
+          collapsed ? "h-20 px-2" : "h-28 px-3"
         )}
+      >
+        <Link
+          href="/dashboard"
+          className="flex w-full items-center justify-center"
+          aria-label="Axis Hotel dashboard"
+        >
+          <Image
+            src="/axis-hotel-mark.png"
+            alt="Axis Hotel Nakuru"
+            width={302}
+            height={312}
+            priority
+            className={clsx(
+              "h-auto shrink-0 object-contain",
+              collapsed ? "w-14" : "w-24"
+            )}
+          />
+        </Link>
       </div>
 
       <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-6">

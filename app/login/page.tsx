@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 
@@ -35,9 +36,17 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen bg-bg flex items-center justify-center p-4">
       <div className="card w-full max-w-sm">
-        <h1 className="mb-1">Welcome back</h1>
-        <p className="text-text-secondary text-sm mb-6">
-          Sign in to manage your hotel.
+        <Image
+          src="/axis-hotel-logo.png"
+          alt="Axis Hotel Nakuru"
+          width={302}
+          height={312}
+          priority
+          className="w-36 h-auto mx-auto mb-4 rounded-xl"
+        />
+        <h1 className="mb-1 text-center">Welcome back</h1>
+        <p className="text-text-secondary text-sm mb-6 text-center">
+          Sign in to Axis Hotel management.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
