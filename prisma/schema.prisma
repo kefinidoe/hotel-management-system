@@ -45,6 +45,7 @@ model User {
   expensesRequested   Expense[]          @relation("ExpenseRequestedBy")
   purchasesRecorded   Purchase[]         @relation("PurchaseCreatedBy")
   wastagesRecorded    Wastage[]          @relation("WastageRecordedBy")
+  wastagesAccountable Wastage[]          @relation("WastageAccountable")
   stockMovements      StockMovement[]    @relation("StockMovementUser")
 }
 
@@ -433,15 +434,20 @@ enum WastageReason {
 }
 
 model Wastage {
-  id              String        @id @default(uuid())
-  inventoryItemId String
-  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
-  quantity        Decimal       @db.Decimal(12, 2) // in the item's base unit
-  reason          WastageReason
-  department      String?
-  recordedById    String
-  recordedBy      User          @relation("WastageRecordedBy", fields: [recordedById], references: [id])
-  createdAt       DateTime      @default(now())
+  id                String        @id @default(uuid())
+  inventoryItemId   String
+  inventoryItem     InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  quantity          Decimal       @db.Decimal(12, 2) // in the item's base unit
+  reason            WastageReason
+  department        String?
+  recordedById      String
+  recordedBy        User          @relation("WastageRecordedBy", fields: [recordedById], references: [id])
+  accountableUserId String?
+  accountableUser   User?         @relation("WastageAccountable", fields: [accountableUserId], references: [id], onDelete: SetNull)
+  accountableName   String?       // immutable name snapshot; null only for records created before accountability tracking
+  createdAt         DateTime      @default(now())
+
+  @@index([accountableUserId])
 }
 
 // ---------- Expenses ----------
