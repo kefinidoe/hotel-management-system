@@ -310,6 +310,7 @@ export default function FrontDeskClient({
           rooms={rooms}
           defaultRoomId={rooms[0].id}
           defaultDate={new Date()}
+          canApplyDiscount={canOverrideBalance}
           onClose={() => setWalkInOpen(false)}
           onCreated={() => refresh()}
           onError={setError}

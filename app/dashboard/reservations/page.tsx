@@ -6,7 +6,7 @@ import { ROLE_GROUPS } from "@/lib/permissions";
 export const dynamic = 'force-dynamic';
 
 export default async function ReservationsPage() {
-  await requirePageRole(ROLE_GROUPS.GUEST_STAYS);
+  const session = await requirePageRole(ROLE_GROUPS.GUEST_STAYS);
 
   const rooms = await prisma.room.findMany({
     include: { roomType: true },
@@ -21,5 +21,5 @@ export default async function ReservationsPage() {
     isTwin: r.isTwin,
   }));
 
-  return <ReservationsClient rooms={initialRooms} />;
+  return <ReservationsClient rooms={initialRooms} currentUserRole={session.user.role} />;
 }

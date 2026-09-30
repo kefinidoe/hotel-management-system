@@ -18,6 +18,7 @@ export default function CreateReservationModal({
   rooms,
   defaultRoomId,
   defaultDate,
+  canApplyDiscount,
   onClose,
   onCreated,
   onError,
@@ -25,6 +26,7 @@ export default function CreateReservationModal({
   rooms: Room[];
   defaultRoomId: string;
   defaultDate: Date;
+  canApplyDiscount: boolean;
   onClose: () => void;
   onCreated: (reservationId: string) => void;
   onError: (e: string | null) => void;
@@ -85,10 +87,12 @@ export default function CreateReservationModal({
         checkInDate: new Date(checkInDate).toISOString(),
         checkOutDate: new Date(checkOutDate).toISOString(),
         roomId,
-        rate,
+        tariffId: matchedTariff.id,
+        occupancy: room?.isTwin ? "TWIN" : occupancy,
+        mealPlan,
         adults: Number(adults) || 1,
         children: Number(children) || 0,
-        discount: discount ? Number(discount) : null,
+        discount: canApplyDiscount && discount ? Number(discount) : null,
       }),
     });
     setLoading(false);
@@ -205,17 +209,30 @@ export default function CreateReservationModal({
             </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className={canApplyDiscount ? "grid grid-cols-2 gap-3" : ""}>
             <div>
-              <label className="block text-sm font-medium mb-1.5">Rate per night (KSh)</label>
+              <label className="block text-sm font-medium mb-1.5">
+                Approved rate per night (KSh)
+              </label>
               <p className={`${inputClass()} bg-bg font-medium`}>
                 {matchedTariff ? rate.toLocaleString() : "--"}
               </p>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Discount (KSh, optional)</label>
-              <input type="number" value={discount} onChange={(e) => setDiscount(e.target.value)} className={inputClass()} />
-            </div>
+            {canApplyDiscount && (
+              <div>
+                <label className="block text-sm font-medium mb-1.5">
+                  Discount (KSh, optional)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={discount}
+                  onChange={(e) => setDiscount(e.target.value)}
+                  className={inputClass()}
+                />
+              </div>
+            )}
           </div>
 
           <button type="submit" disabled={loading || !matchedTariff} className="btn-primary w-full mt-2">

@@ -3,7 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 import clsx from "clsx";
+import type { RoleName } from "@prisma/client";
 import { startOfWeek, addDays, isoDay } from "@/lib/dates";
+import { hasRole, ROLE_GROUPS } from "@/lib/permissions";
 import CreateReservationModal from "./CreateReservationModal";
 
 type Room = { id: string; number: string; roomTypeName: string; baseRate: number; isTwin: boolean };
@@ -35,7 +37,14 @@ function statusBarClasses(status: string) {
   }
 }
 
-export default function ReservationsClient({ rooms }: { rooms: Room[] }) {
+export default function ReservationsClient({
+  rooms,
+  currentUserRole,
+}: {
+  rooms: Room[];
+  currentUserRole: RoleName;
+}) {
+  const canApplyDiscount = hasRole(currentUserRole, ROLE_GROUPS.MANAGEMENT);
   const [weekOffset, setWeekOffset] = useState(0);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -230,6 +239,7 @@ export default function ReservationsClient({ rooms }: { rooms: Room[] }) {
           rooms={rooms}
           defaultRoomId={createFor.roomId}
           defaultDate={createFor.date}
+          canApplyDiscount={canApplyDiscount}
           onClose={() => setCreateFor(null)}
           onCreated={load}
           onError={setError}

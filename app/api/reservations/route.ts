@@ -6,9 +6,12 @@ import { prisma } from "@/lib/prisma";
 import { rangesOverlap } from "@/lib/dates";
 import { requireRole, ROLE_GROUPS } from "@/lib/authz";
 import { accommodationRequired, parseMoney, stayNights } from "@/lib/billing";
+import { hasRole } from "@/lib/permissions";
 import { nextReservationCode } from "@/lib/reservation-code";
 
 const BOOKING_SOURCES = ["WALK_IN", "PHONE", "WEBSITE", "OTA", "CORPORATE", "OTHER"] as const;
+const OCCUPANCIES = ["SINGLE", "DOUBLE", "TWIN"] as const;
+const MEAL_PLANS = ["BED_ONLY", "BED_AND_BREAKFAST"] as const;
 
 class ReservationError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -78,9 +81,20 @@ export async function POST(req: Request) {
   const nationality = text(body.nationality);
   const vehicleRegistration = text(body.vehicleRegistration);
   const roomId = text(body.roomId);
+  const tariffId = text(body.tariffId);
+  const occupancy = OCCUPANCIES.find((value) => value === body.occupancy);
+  const mealPlan = MEAL_PLANS.find((value) => value === body.mealPlan);
   const notes = text(body.notes);
 
-  if (!guestName || !body.checkInDate || !body.checkOutDate || !roomId) {
+  if (
+    !guestName ||
+    !body.checkInDate ||
+    !body.checkOutDate ||
+    !roomId ||
+    !tariffId ||
+    !occupancy ||
+    !mealPlan
+  ) {
     return NextResponse.json({ error: "Missing required reservation fields." }, { status: 400 });
   }
 
@@ -90,18 +104,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Enter valid check-in and check-out dates." }, { status: 400 });
   }
 
-  let rate: number;
   let discount: number;
   let nights: number;
   try {
-    rate = parseMoney(body.rate, "Nightly rate", { allowZero: true });
     discount = parseMoney(body.discount ?? 0, "Discount", { allowZero: true });
     nights = stayNights(checkIn, checkOut);
-    accommodationRequired([rate], nights, discount);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "The reservation charges are invalid." },
       { status: 400 }
+    );
+  }
+
+  if (discount > 0 && !hasRole(session.user.role, ROLE_GROUPS.MANAGEMENT)) {
+    return NextResponse.json(
+      { error: "Only an Admin or Manager can apply an accommodation discount." },
+      { status: 403 }
     );
   }
 
@@ -125,11 +143,45 @@ export async function POST(req: Request) {
           SELECT pg_advisory_xact_lock(hashtext('axis-hotel-reservation-create'))::text AS locked
         `;
 
-        const room = await tx.room.findUnique({
-          where: { id: roomId },
-          select: { id: true },
-        });
+        const [room, tariff] = await Promise.all([
+          tx.room.findUnique({
+            where: { id: roomId },
+            select: { id: true, isTwin: true },
+          }),
+          tx.roomType.findUnique({ where: { id: tariffId } }),
+        ]);
         if (!room) throw new ReservationError("Room not found.", 404);
+        if (!tariff) throw new ReservationError("The selected tariff is unavailable.", 404);
+
+        if ((room.isTwin && occupancy !== "TWIN") || (!room.isTwin && occupancy === "TWIN")) {
+          throw new ReservationError("That occupancy option is not available for the selected room.");
+        }
+
+        const expectedCategory = room.isTwin
+          ? "Twin"
+          : occupancy === "DOUBLE"
+          ? "Double"
+          : "Single";
+        if (
+          !tariff.name.toLowerCase().startsWith(expectedCategory.toLowerCase()) ||
+          tariff.mealPlan !== mealPlan
+        ) {
+          throw new ReservationError(
+            "The selected tariff does not match the room, occupancy, and meal plan."
+          );
+        }
+
+        let rate: number;
+        try {
+          rate = parseMoney(Number(tariff.baseRate), "Configured nightly rate", {
+            allowZero: true,
+          });
+          accommodationRequired([rate], nights, discount);
+        } catch (error) {
+          throw new ReservationError(
+            error instanceof Error ? error.message : "The configured tariff is invalid."
+          );
+        }
 
         const existing = await tx.reservationRoom.findMany({
           where: {
