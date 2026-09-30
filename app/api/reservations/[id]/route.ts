@@ -5,19 +5,32 @@ import { prisma } from "@/lib/prisma";
 import { rangesOverlap } from "@/lib/dates";
 import { requireRole, ROLE_GROUPS } from "@/lib/authz";
 
-
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const forbidden = requireRole(session, ROLE_GROUPS.GUEST_STAYS);
-  if (forbidden) return forbidden; 
+  const forbidden = requireRole(session, ROLE_GROUPS.GUEST_STAYS);
+  if (forbidden) return forbidden;
+
   const body = await req.json();
   const reservation = await prisma.reservation.findUnique({
     where: { id: params.id },
     include: { rooms: true },
   });
   if (!reservation) return NextResponse.json({ error: "Reservation not found." }, { status: 404 });
+
+  if (reservation.status === "CHECKED_IN") {
+    return NextResponse.json(
+      { error: "Manage a checked-in stay from Front Desk. Use Add Days to extend it." },
+      { status: 400 }
+    );
+  }
+  if (reservation.status === "CHECKED_OUT") {
+    return NextResponse.json(
+      { error: "A checked-out reservation cannot be changed." },
+      { status: 400 }
+    );
+  }
 
   // Status-only change (e.g. cancel) — no overlap check needed.
   if (body.status && !body.checkInDate && !body.checkOutDate && !body.roomId) {

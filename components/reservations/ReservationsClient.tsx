@@ -18,6 +18,10 @@ type Reservation = {
   rooms: { roomId: string; roomNumber: string; rate: number }[];
 };
 
+function canEditReservation(status: string) {
+  return status === "PENDING" || status === "CONFIRMED";
+}
+
 function statusBarClasses(status: string) {
   switch (status) {
     case "CHECKED_IN":
@@ -172,8 +176,9 @@ export default function ReservationsClient({ rooms }: { rooms: Room[] }) {
                 {barsForRoom(room.id).map(({ reservation, startCol, span }) => (
                   <div
                     key={reservation.id}
-                    draggable
-                    onDragStart={(e) =>
+                    draggable={canEditReservation(reservation.status)}
+                    onDragStart={(e) => {
+                      if (!canEditReservation(reservation.status)) return;
                       e.dataTransfer.setData(
                         "text/plain",
                         JSON.stringify({
@@ -182,15 +187,22 @@ export default function ReservationsClient({ rooms }: { rooms: Room[] }) {
                           checkOutDate: reservation.checkOutDate,
                           originalStartCol: startCol,
                         })
-                      )
-                    }
+                      );
+                    }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      cancelReservation(reservation.id);
+                      if (canEditReservation(reservation.status)) {
+                        cancelReservation(reservation.id);
+                      }
                     }}
-                    title={`${reservation.guestName} — ${reservation.code} (click to cancel)`}
+                    title={
+                      canEditReservation(reservation.status)
+                        ? `${reservation.guestName} — ${reservation.code} (click to cancel)`
+                        : `${reservation.guestName} — ${reservation.code} (manage from Front Desk)`
+                    }
                     className={clsx(
-                      "absolute top-1.5 bottom-1.5 rounded-control px-2 py-1 text-xs font-medium truncate cursor-grab",
+                      "absolute top-1.5 bottom-1.5 rounded-control px-2 py-1 text-xs font-medium truncate",
+                      canEditReservation(reservation.status) ? "cursor-grab" : "cursor-default",
                       statusBarClasses(reservation.status)
                     )}
                     style={{

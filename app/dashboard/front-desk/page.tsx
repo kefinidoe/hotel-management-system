@@ -6,6 +6,7 @@ import { ROLE_GROUPS } from "@/lib/permissions";
 import {
   accommodationRequired,
   folioTotals,
+  roundMoney,
   stayNights,
 } from "@/lib/billing";
 
@@ -68,6 +69,9 @@ function serializeReservation(reservation: FrontDeskReservation) {
     requiredAmount: totals.required,
     paidAmount: totals.paid,
     balance: totals.balance,
+    nightlyRateTotal: roundMoney(
+      reservation.rooms.reduce((sum, room) => sum + Number(room.rate), 0)
+    ),
   };
 }
 

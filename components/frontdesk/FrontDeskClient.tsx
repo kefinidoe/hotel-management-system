@@ -7,6 +7,7 @@ import type { RoleName } from "@prisma/client";
 import CreateReservationModal from "@/components/reservations/CreateReservationModal";
 import FolioModal from "./FolioModal";
 import CheckInModal from "./CheckInModal";
+import ExtendStayModal from "./ExtendStayModal";
 import { hasRole, ROLE_GROUPS } from "@/lib/permissions";
 
 type ResRow = {
@@ -20,6 +21,7 @@ type ResRow = {
   requiredAmount: number;
   paidAmount: number;
   balance: number;
+  nightlyRateTotal: number;
 };
 type Room = { id: string; number: string; roomTypeName: string; baseRate: number; isTwin: boolean };
 
@@ -51,6 +53,7 @@ export default function FrontDeskClient({
   const [error, setError] = useState<string | null>(null);
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [checkInReservation, setCheckInReservation] = useState<ResRow | null>(null);
+  const [extendReservation, setExtendReservation] = useState<ResRow | null>(null);
   const [openFolio, setOpenFolio] = useState<{ folioId: string; reservationId: string } | null>(null);
 
   function refresh() {
@@ -267,16 +270,29 @@ export default function FrontDeskClient({
                   </div>
                 </div>
 
-                <button
-                  onClick={() =>
-                    r.openFolioId
-                      ? setOpenFolio({ folioId: r.openFolioId, reservationId: r.id })
-                      : setError("No open folio found for this reservation.")
-                  }
-                  className="btn-secondary w-full mt-4 transition-all duration-200 group-hover:border-primary-200"
-                >
-                  View Folio
-                </button>
+                <div className={`mt-4 grid gap-2 ${canManageStays ? "grid-cols-2" : "grid-cols-1"}`}>
+                  <button
+                    onClick={() =>
+                      r.openFolioId
+                        ? setOpenFolio({ folioId: r.openFolioId, reservationId: r.id })
+                        : setError("No open folio found for this reservation.")
+                    }
+                    className="btn-secondary w-full transition-all duration-200 group-hover:border-primary-200"
+                  >
+                    View Folio
+                  </button>
+                  {canManageStays && (
+                    <button
+                      onClick={() => {
+                        setError(null);
+                        setExtendReservation(r);
+                      }}
+                      className="btn-primary w-full"
+                    >
+                      Add Days
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
             {inHouse.length === 0 && (
@@ -307,6 +323,17 @@ export default function FrontDeskClient({
           onCheckedIn={(folioId) => {
             refresh();
             setOpenFolio({ folioId, reservationId: checkInReservation.id });
+          }}
+        />
+      )}
+
+      {extendReservation && (
+        <ExtendStayModal
+          reservation={extendReservation}
+          onClose={() => setExtendReservation(null)}
+          onExtended={(folioId) => {
+            refresh();
+            setOpenFolio({ folioId, reservationId: extendReservation.id });
           }}
         />
       )}
