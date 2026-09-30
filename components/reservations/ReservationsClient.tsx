@@ -6,7 +6,7 @@ import clsx from "clsx";
 import { startOfWeek, addDays, isoDay } from "@/lib/dates";
 import CreateReservationModal from "./CreateReservationModal";
 
-type Room = { id: string; number: string; roomTypeName: string; baseRate: number };
+type Room = { id: string; number: string; roomTypeName: string; baseRate: number; isTwin: boolean };
 type Reservation = {
   id: string;
   code: string;

@@ -15,7 +15,7 @@ type ResRow = {
   roomNumbers: string;
   openFolioId: string | null;
 };
-type Room = { id: string; number: string; roomTypeName: string; baseRate: number };
+type Room = { id: string; number: string; roomTypeName: string; baseRate: number; isTwin: boolean };
 
 export default function FrontDeskClient({
   arrivals,

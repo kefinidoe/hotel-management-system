@@ -14,6 +14,7 @@ export default async function ReservationsPage() {
     number: r.number,
     roomTypeName: r.roomType.name,
     baseRate: Number(r.roomType.baseRate),
+    isTwin: r.isTwin,
   }));
 
   return <ReservationsClient rooms={initialRooms} />;

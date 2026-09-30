@@ -48,6 +48,93 @@ async function main() {
 
   console.log("Seeded 2 room types and 2 rooms.");
 
+  // One-time real-room-list migration: rooms 101/102 were placeholder test
+  // rooms with made-up tariffs. Clear anything attached to them, then
+  // replace with Axis Hotel Nakuru's real 26 rooms across floors 1-4.
+  // Rooms 27 and 28 are the only fixed twin-bed rooms; every other room is
+  // flexible (Single or Double chosen at check-in), so isTwin marks only
+  // those two.
+  // Find every room still on the old placeholder tariffs, whatever it's
+  // named -- not just 101/102 -- in case anything else got created
+  // through the UI while those were still the only types available.
+  const oldRooms = await prisma.room.findMany({
+    where: { roomTypeId: { in: ["seed-single", "seed-double"] } },
+  });
+  const oldRoomIds = oldRooms.map((r) => r.id);
+  if (oldRooms.length > 0) {
+    console.log(`Found ${oldRooms.length} room(s) still on old placeholder tariffs: ${oldRooms.map((r) => r.number).join(", ")}`);
+  }
+
+  if (oldRoomIds.length > 0) {
+    const oldFolioIds = (
+      await prisma.reservationRoom.findMany({
+        where: { roomId: { in: oldRoomIds } },
+        select: { reservation: { select: { folios: { select: { id: true } } } } },
+      })
+    ).flatMap((rr) => rr.reservation.folios.map((f) => f.id));
+
+    if (oldFolioIds.length > 0) {
+      await prisma.payment.deleteMany({ where: { folioId: { in: oldFolioIds } } });
+      await prisma.folioItem.deleteMany({ where: { folioId: { in: oldFolioIds } } });
+      await prisma.order.deleteMany({ where: { folioId: { in: oldFolioIds } } });
+      await prisma.folio.deleteMany({ where: { id: { in: oldFolioIds } } });
+    }
+
+    const oldReservationIds = (
+      await prisma.reservationRoom.findMany({
+        where: { roomId: { in: oldRoomIds } },
+        select: { reservationId: true },
+      })
+    ).map((rr) => rr.reservationId);
+
+    await prisma.reservationRoom.deleteMany({ where: { roomId: { in: oldRoomIds } } });
+    if (oldReservationIds.length > 0) {
+      await prisma.reservation.deleteMany({ where: { id: { in: oldReservationIds } } });
+    }
+    await prisma.housekeepingTask.deleteMany({ where: { roomId: { in: oldRoomIds } } });
+    await prisma.maintenanceTicket.deleteMany({ where: { roomId: { in: oldRoomIds } } });
+    await prisma.room.deleteMany({ where: { id: { in: oldRoomIds } } });
+  }
+
+  await prisma.roomType.deleteMany({ where: { id: { in: ["seed-single", "seed-double"] } } });
+
+  // Fix the mislabeled tariff: it was seeded as "Triple" (capacity 3), but
+  // it's really the Twin-bed tariff for rooms 27 & 28 (capacity 2).
+  await prisma.roomType.update({
+    where: { id: "tariff-triple-bo" },
+    data: { name: "Twin — Bed Only", capacity: 2 },
+  });
+  await prisma.roomType.update({
+    where: { id: "tariff-triple-bb" },
+    data: { name: "Twin — B&B", capacity: 2 },
+  });
+
+  const floors: { prefix: string; numbers: string[]; floor: string }[] = [
+    { prefix: "", numbers: ["01", "02", "03", "04", "05", "06", "07", "08"], floor: "1" },
+    { prefix: "", numbers: ["21", "22", "23", "24", "25", "26", "27", "28"], floor: "2" },
+    { prefix: "", numbers: ["31", "32", "33", "34", "35", "36", "37", "38"], floor: "3" },
+    { prefix: "", numbers: ["41", "43"], floor: "4" },
+  ];
+
+  let realRoomCount = 0;
+  for (const group of floors) {
+    for (const num of group.numbers) {
+      const isTwin = num === "27" || num === "28";
+      await prisma.room.upsert({
+        where: { number: num },
+        update: { isTwin, floor: group.floor },
+        create: {
+          number: num,
+          floor: group.floor,
+          isTwin,
+          roomTypeId: isTwin ? "tariff-triple-bo" : "tariff-single-bo",
+        },
+      });
+      realRoomCount++;
+    }
+  }
+  console.log(`Seeded the real ${realRoomCount}-room list across floors 1-4 (rooms 27 & 28 flagged as Twin).`);
+
   const methods = ["Cash", "M-Pesa", "Card", "Bank Transfer"];
   for (const name of methods) {
     await prisma.paymentMethod.upsert({
@@ -81,7 +168,6 @@ async function main() {
     });
   }
   console.log("Seeded the 6 real Axis Hotel tariff room types (Single/Double/Triple x Bed Only/B&B).");
-  console.log("Reassign rooms 101/102/107 to the correct new type on the Rooms page, then delete the old generic Single/Double types there.");
 
   // A small starter menu so the Restaurant POS has something to sell.
   const menu: Record<string, { name: string; price: number }[]> = {

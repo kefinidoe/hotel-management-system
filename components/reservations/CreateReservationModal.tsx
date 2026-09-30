@@ -1,11 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { addDays, isoDay } from "@/lib/dates";
 
-type Room = { id: string; number: string; roomTypeName: string; baseRate: number };
+type Room = { id: string; number: string; roomTypeName: string; baseRate: number; isTwin: boolean };
 type PaymentMethod = { id: string; name: string };
+type RoomTypeTariff = { id: string; name: string; baseRate: number | string; mealPlan: "BED_ONLY" | "BED_AND_BREAKFAST" };
+
+type Occupancy = "SINGLE" | "DOUBLE";
+type MealPlan = "BED_ONLY" | "BED_AND_BREAKFAST";
 
 function inputClass() {
   return "w-full rounded-control border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent";
@@ -26,10 +30,8 @@ export default function CreateReservationModal({
   onCreated: (reservationId: string) => void;
   onError: (e: string | null) => void;
 }) {
-  const room = rooms.find((r) => r.id === defaultRoomId);
-
   // Matches Axis Hotel's paper check-in card: guest identity + registration,
-  // stay dates, room/tariff, and payment mode — all captured up front.
+  // stay dates, room/tariff, and payment mode -- all captured up front.
   const [guestName, setGuestName] = useState("");
   const [guestPhone, setGuestPhone] = useState("");
   const [idNumber, setIdNumber] = useState("");
@@ -38,22 +40,43 @@ export default function CreateReservationModal({
   const [roomId, setRoomId] = useState(defaultRoomId);
   const [checkInDate, setCheckInDate] = useState(isoDay(defaultDate));
   const [checkOutDate, setCheckOutDate] = useState(isoDay(addDays(defaultDate, 1)));
-  const [rate, setRate] = useState(String(room?.baseRate ?? ""));
+  const [occupancy, setOccupancy] = useState<Occupancy>("SINGLE");
+  const [mealPlan, setMealPlan] = useState<MealPlan>("BED_ONLY");
   const [adults, setAdults] = useState("1");
   const [children, setChildren] = useState("0");
   const [paymentMode, setPaymentMode] = useState("");
   const [discount, setDiscount] = useState("");
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [tariffs, setTariffs] = useState<RoomTypeTariff[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/payment-methods")
       .then((r) => r.json())
       .then((m) => setMethods(m));
+    fetch("/api/room-types")
+      .then((r) => r.json())
+      .then((t) => setTariffs(t));
   }, []);
+
+  const room = rooms.find((r) => r.id === roomId);
+
+  // Whichever tariff category applies: rooms 27/28 are always Twin,
+  // everything else is whichever of Single/Double the receptionist picks.
+  const tariffCategory = room?.isTwin ? "Twin" : occupancy === "DOUBLE" ? "Double" : "Single";
+
+  const matchedTariff = useMemo(
+    () => tariffs.find((t) => t.name.startsWith(tariffCategory) && t.mealPlan === mealPlan),
+    [tariffs, tariffCategory, mealPlan]
+  );
+  const rate = matchedTariff ? Number(matchedTariff.baseRate) : 0;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!matchedTariff) {
+      onError("Could not determine a rate for this room/occupancy/meal plan combination.");
+      return;
+    }
     setLoading(true);
     onError(null);
     const res = await fetch("/api/reservations", {
@@ -68,7 +91,7 @@ export default function CreateReservationModal({
         checkInDate: new Date(checkInDate).toISOString(),
         checkOutDate: new Date(checkOutDate).toISOString(),
         roomId,
-        rate: Number(rate),
+        rate,
         adults: Number(adults) || 1,
         children: Number(children) || 0,
         paymentMode: paymentMode || null,
@@ -81,8 +104,6 @@ export default function CreateReservationModal({
     try {
       data = await res.json();
     } catch {
-      // Server returned an empty or non-JSON body -- usually a dropped
-      // connection mid-request, not something the form did wrong.
       onError("Lost connection while saving. Please check your connection and try again.");
       return;
     }
@@ -155,28 +176,48 @@ export default function CreateReservationModal({
             </div>
           </div>
 
+          <p className="text-xs font-medium uppercase tracking-wide text-text-muted pt-2">Room &amp; Tariff</p>
+
           <div>
-            <label className="block text-sm font-medium mb-1.5">Room / Tariff</label>
-            <select
-              value={roomId}
-              onChange={(e) => {
-                setRoomId(e.target.value);
-                const r = rooms.find((rr) => rr.id === e.target.value);
-                if (r) setRate(String(r.baseRate));
-              }}
-              className={inputClass()}
-            >
+            <label className="block text-sm font-medium mb-1.5">Room</label>
+            <select value={roomId} onChange={(e) => setRoomId(e.target.value)} className={inputClass()}>
               {rooms.map((r) => (
                 <option key={r.id} value={r.id}>
-                  {r.number} — {r.roomTypeName}
+                  Room {r.number}
                 </option>
               ))}
             </select>
           </div>
+
+          {room?.isTwin ? (
+            <div>
+              <label className="block text-sm font-medium mb-1.5">Occupancy</label>
+              <p className={`${inputClass()} bg-bg text-text-secondary`}>Twin (fixed -- 2 guests)</p>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-sm font-medium mb-1.5">Occupancy</label>
+              <select value={occupancy} onChange={(e) => setOccupancy(e.target.value as Occupancy)} className={inputClass()}>
+                <option value="SINGLE">Single</option>
+                <option value="DOUBLE">Double</option>
+              </select>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Meal Plan</label>
+            <select value={mealPlan} onChange={(e) => setMealPlan(e.target.value as MealPlan)} className={inputClass()}>
+              <option value="BED_ONLY">Bed Only</option>
+              <option value="BED_AND_BREAKFAST">Bed &amp; Breakfast</option>
+            </select>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1.5">Rate per night (KSh)</label>
-              <input type="number" value={rate} onChange={(e) => setRate(e.target.value)} required className={inputClass()} />
+              <p className={`${inputClass()} bg-bg font-medium`}>
+                {matchedTariff ? rate.toLocaleString() : "--"}
+              </p>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1.5">Discount (KSh, optional)</label>
@@ -196,7 +237,7 @@ export default function CreateReservationModal({
             </select>
           </div>
 
-          <button type="submit" disabled={loading} className="btn-primary w-full mt-2">
+          <button type="submit" disabled={loading || !matchedTariff} className="btn-primary w-full mt-2">
             {loading ? "Creating..." : "Create Reservation"}
           </button>
         </form>

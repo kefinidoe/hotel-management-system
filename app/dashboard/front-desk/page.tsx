@@ -58,6 +58,7 @@ export default async function FrontDeskPage() {
         number: r.number,
         roomTypeName: r.roomType.name,
         baseRate: Number(r.roomType.baseRate),
+        isTwin: r.isTwin,
       }))}
     />
   );
