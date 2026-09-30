@@ -12,6 +12,7 @@ export async function GET() {
   if (forbidden) return forbidden;
 
   const categories = await prisma.menuCategory.findMany({
+    relationLoadStrategy: "join",
     include: {
       items: {
         where: { isActive: true },

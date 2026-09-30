@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Minus, Plus, Trash2, ShoppingCart, UtensilsCrossed, Settings2, X } from "lucide-react";
 import type { RoleName } from "@prisma/client";
 import clsx from "clsx";
@@ -31,9 +31,17 @@ function inputClass() {
 export default function RestaurantClient({
   menu,
   currentUserRole,
+  initialFolios,
+  initialMethods,
+  initialActivity,
+  initialTodayTotal,
 }: {
   menu: Category[];
   currentUserRole: RoleName;
+  initialFolios: OpenFolio[];
+  initialMethods: PaymentMethod[];
+  initialActivity: ActivityItem[];
+  initialTodayTotal: number;
 }) {
   const canManageMenu = hasRole(currentUserRole, ROLE_GROUPS.MANAGEMENT);
   const [activeCategory, setActiveCategory] = useState(menu[0]?.id ?? "");
@@ -41,15 +49,15 @@ export default function RestaurantClient({
   const [mode, setMode] = useState<"ROOM" | "PAY">("ROOM");
   const [tableNumber, setTableNumber] = useState("");
 
-  const [folios, setFolios] = useState<OpenFolio[]>([]);
-  const [folioId, setFolioId] = useState("");
-  const [methods, setMethods] = useState<PaymentMethod[]>([]);
-  const [methodId, setMethodId] = useState("");
+  const [folios, setFolios] = useState<OpenFolio[]>(initialFolios);
+  const [folioId, setFolioId] = useState(initialFolios[0]?.id ?? "");
+  const [methods] = useState<PaymentMethod[]>(initialMethods);
+  const [methodId, setMethodId] = useState(initialMethods[0]?.id ?? "");
   const [customerName, setCustomerName] = useState("");
   const [reference, setReference] = useState("");
 
-  const [activity, setActivity] = useState<ActivityItem[]>([]);
-  const [todayTotal, setTodayTotal] = useState(0);
+  const [activity, setActivity] = useState<ActivityItem[]>(initialActivity);
+  const [todayTotal, setTodayTotal] = useState(initialTodayTotal);
   const [manageOpen, setManageOpen] = useState(false);
 
   const [loading, setLoading] = useState(false);
@@ -69,17 +77,6 @@ export default function RestaurantClient({
     setFolios(data);
     setFolioId((current) => current || data[0]?.id || "");
   }, []);
-
-  useEffect(() => {
-    loadActivity();
-    loadFolios();
-    fetch("/api/payment-methods")
-      .then((r) => r.json())
-      .then((m: PaymentMethod[]) => {
-        setMethods(m);
-        setMethodId((c) => c || m[0]?.id || "");
-      });
-  }, [loadActivity, loadFolios]);
 
   const subtotal = order.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
   const total = subtotal;

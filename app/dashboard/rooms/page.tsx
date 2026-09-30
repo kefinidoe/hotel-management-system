@@ -8,7 +8,11 @@ export const dynamic = 'force-dynamic';
 export default async function RoomsPage() {
   const session = await requirePageRole(ROLE_GROUPS.ALL_STAFF);
   const [rooms, roomTypes] = await Promise.all([
-    prisma.room.findMany({ include: { roomType: true }, orderBy: { number: "asc" } }),
+    prisma.room.findMany({
+      relationLoadStrategy: "join",
+      include: { roomType: true },
+      orderBy: { number: "asc" },
+    }),
     prisma.roomType.findMany({ orderBy: { name: "asc" } }),
   ]);
 

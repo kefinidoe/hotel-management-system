@@ -2,7 +2,8 @@
 // PostgreSQL, UUID primary keys, timestamps, soft deletion where it matters.
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["relationJoins"]
 }
 
 datasource db {
@@ -156,6 +157,9 @@ model Reservation {
 
   rooms  ReservationRoom[]
   folios Folio[]
+
+  @@index([status, checkInDate])
+  @@index([status, checkOutDate])
 }
 
 // Join table: a reservation can cover multiple rooms
@@ -185,6 +189,9 @@ model Folio {
   items    FolioItem[]
   payments Payment[]
   orders   Order[]
+
+  @@index([isClosed])
+  @@index([reservationId])
 }
 
 enum FolioItemType {
@@ -207,6 +214,8 @@ model FolioItem {
   taxRate     Decimal       @db.Decimal(5, 2) @default(0) // configurable, not hard-coded
   total       Decimal       @db.Decimal(10, 2)
   createdAt   DateTime      @default(now())
+
+  @@index([type, createdAt])
 }
 
 model PaymentMethod {
@@ -299,6 +308,8 @@ model MenuItem {
   isActive   Boolean      @default(true)
 
   recipe Recipe?
+
+  @@index([categoryId, isActive])
 }
 
 // ---------- Restaurant orders ----------

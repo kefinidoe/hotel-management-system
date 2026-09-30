@@ -80,33 +80,47 @@ export default async function FrontDeskPage() {
   const todayStart = startOfToday();
   const todayEnd = endOfToday();
 
-  const [arrivals, departures, inHouse, rooms] = await Promise.all([
+  const [reservations, rooms] = await Promise.all([
     prisma.reservation.findMany({
+      relationLoadStrategy: "join",
       where: {
-        checkInDate: { gte: todayStart, lt: todayEnd },
-        status: { in: ["CONFIRMED", "PENDING"] },
+        OR: [
+          {
+            checkInDate: { gte: todayStart, lt: todayEnd },
+            status: { in: ["CONFIRMED", "PENDING"] },
+          },
+          { status: "CHECKED_IN" },
+        ],
       },
-      include: frontDeskInclude,
-      orderBy: { checkInDate: "asc" },
-    }),
-    prisma.reservation.findMany({
-      where: {
-        checkOutDate: { gte: todayStart, lt: todayEnd },
-        status: "CHECKED_IN",
-      },
-      include: frontDeskInclude,
-      orderBy: { checkOutDate: "asc" },
-    }),
-    prisma.reservation.findMany({
-      where: { status: "CHECKED_IN" },
       include: frontDeskInclude,
       orderBy: { checkInDate: "asc" },
     }),
     prisma.room.findMany({
+      relationLoadStrategy: "join",
       include: { roomType: true },
       orderBy: { number: "asc" },
     }),
   ]);
+
+  const arrivals = reservations.filter(
+    (reservation) =>
+      (reservation.status === "CONFIRMED" || reservation.status === "PENDING") &&
+      reservation.checkInDate >= todayStart &&
+      reservation.checkInDate < todayEnd
+  );
+  const inHouse = reservations.filter(
+    (reservation) => reservation.status === "CHECKED_IN"
+  );
+  const departures = inHouse
+    .filter(
+      (reservation) =>
+        reservation.checkOutDate >= todayStart &&
+        reservation.checkOutDate < todayEnd
+    )
+    .sort(
+      (left, right) =>
+        left.checkOutDate.getTime() - right.checkOutDate.getTime()
+    );
 
   return (
     <FrontDeskClient
