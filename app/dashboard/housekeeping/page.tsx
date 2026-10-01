@@ -10,6 +10,7 @@ export default async function HousekeepingPage() {
 
   const [tasks, staff] = await Promise.all([
     prisma.housekeepingTask.findMany({
+      where: { room: { isActive: true } },
       include: { room: { include: { roomType: true } }, assignee: true },
       orderBy: { updatedAt: "desc" },
     }),

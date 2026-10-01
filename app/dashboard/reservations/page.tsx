@@ -9,6 +9,7 @@ export default async function ReservationsPage() {
   const session = await requirePageRole(ROLE_GROUPS.GUEST_STAYS);
 
   const rooms = await prisma.room.findMany({
+    where: { isActive: true },
     include: { roomType: true },
     orderBy: { number: "asc" },
   });

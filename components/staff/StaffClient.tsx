@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, X } from "lucide-react";
+import { KeyRound, Plus, Trash2, X } from "lucide-react";
 
 type StaffRow = {
   id: string;
@@ -27,6 +27,7 @@ export default function StaffClient({
 }) {
   const [staff, setStaff] = useState(initialStaff);
   const [addOpen, setAddOpen] = useState(false);
+  const [passwordTarget, setPasswordTarget] = useState<StaffRow | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const isAdmin = currentUserRole === "ADMIN";
@@ -63,6 +64,38 @@ export default function StaffClient({
     setStaff((prev) => prev.map((s) => (s.id === id ? { ...s, isActive } : s)));
   }
 
+  async function deleteStaff(member: StaffRow) {
+    if (
+      !confirm(
+        `Delete ${member.name}'s account?\n\nIf they've never created a reservation, taken a payment, or logged any ` +
+          `stock, housekeeping or maintenance work, the account is removed for good. If they have any history, the ` +
+          `account is deactivated instead (they can no longer sign in) so their past records still make sense.`
+      )
+    ) {
+      return;
+    }
+
+    setBusyId(member.id);
+    const res = await fetch(`/api/staff/${member.id}`, { method: "DELETE" });
+    setBusyId(null);
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      alert(data.error ?? "Could not delete this account.");
+      return;
+    }
+
+    if (data.mode === "deleted") {
+      setStaff((prev) => prev.filter((s) => s.id !== member.id));
+    } else {
+      setStaff((prev) => prev.map((s) => (s.id === member.id ? { ...s, isActive: false } : s)));
+      alert(
+        `${member.name} has work on record (payments, reservations or similar), so the account was deactivated ` +
+          `rather than deleted. They can no longer sign in, and their past records stay intact.`
+      );
+    }
+  }
+
   return (
     <div>
       <div className="flex items-start justify-between mb-4">
@@ -89,6 +122,7 @@ export default function StaffClient({
               <th className="px-4 py-3 font-medium">Department</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Last Login</th>
+              {isAdmin && <th className="px-4 py-3 font-medium text-right">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -140,6 +174,32 @@ export default function StaffClient({
                   <td className="px-4 py-3 text-text-secondary">
                     {s.lastLoginAt ? new Date(s.lastLoginAt).toLocaleString() : "Never"}
                   </td>
+                  {isAdmin && (
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-3 whitespace-nowrap">
+                        <button
+                          onClick={() => setPasswordTarget(s)}
+                          disabled={busyId === s.id}
+                          title={`Set a new password for ${s.name}`}
+                          className="inline-flex items-center gap-1 text-text-secondary text-xs font-medium hover:text-primary-600 hover:underline disabled:opacity-40"
+                        >
+                          <KeyRound size={14} />
+                          Set Password
+                        </button>
+                        {!isSelf && (
+                          <button
+                            onClick={() => deleteStaff(s)}
+                            disabled={busyId === s.id}
+                            title={`Delete ${s.name}'s account`}
+                            className="inline-flex items-center gap-1 text-danger text-xs font-medium hover:underline disabled:opacity-40"
+                          >
+                            <Trash2 size={14} />
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  )}
                 </tr>
               );
             })}
@@ -156,6 +216,154 @@ export default function StaffClient({
           }}
         />
       )}
+
+      {passwordTarget && (
+        <SetPasswordModal
+          member={passwordTarget}
+          onClose={() => setPasswordTarget(null)}
+          onDone={() => {
+            const member = passwordTarget;
+            setPasswordTarget(null);
+            if (member) {
+              alert(
+                `A new password is set for ${member.name}. Tell them in person or by phone — ` +
+                  `it can't be read back from the system later.`
+              );
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Admin sets a new password for someone else -- the "receptionist forgot their
+// password" path. No current password needed; the admin is already authenticated
+// and this route is ADMIN-only.
+function SetPasswordModal({
+  member,
+  onClose,
+  onDone,
+}: {
+  member: StaffRow;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  function generate() {
+    // Same shape as the CLI generator: unambiguous characters only, so it can be
+    // read out over the phone without "is that a one or an ell?".
+    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#%^*_=+";
+    let out = "";
+    const bytes = new Uint32Array(16);
+    crypto.getRandomValues(bytes);
+    for (let i = 0; i < 16; i++) out += alphabet[bytes[i] % alphabet.length];
+    setNewPassword(out);
+    setConfirmPassword(out);
+    setError(null);
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    if (newPassword !== confirmPassword) {
+      setError("The two passwords don't match.");
+      return;
+    }
+    if (newPassword.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+
+    setLoading(true);
+    const res = await fetch(`/api/staff/${member.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ newPassword }),
+    });
+    setLoading(false);
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setError(data.error ?? "Could not set the password.");
+      return;
+    }
+    onDone();
+  }
+
+  return (
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4">
+      <div className="card w-full max-w-sm">
+        <div className="flex items-center justify-between mb-1">
+          <h2>Set Password</h2>
+          <button onClick={onClose} className="text-text-secondary hover:text-text-primary">
+            <X size={18} />
+          </button>
+        </div>
+        <p className="text-xs text-text-secondary mb-4">
+          for <span className="font-medium text-text-primary">{member.name}</span> ({member.email})
+        </p>
+
+        <form onSubmit={submit} className="space-y-3">
+          {error && (
+            <p className="text-sm text-danger bg-danger/5 border border-danger/20 rounded-control px-3 py-2">
+              {error}
+            </p>
+          )}
+
+          <div>
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-text-secondary">New Password</label>
+              <button
+                type="button"
+                onClick={generate}
+                className="text-xs text-primary-600 hover:underline"
+              >
+                Generate one
+              </button>
+            </div>
+            <input
+              type="text"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+              minLength={8}
+              placeholder="At least 8 characters"
+              className="w-full rounded-control border border-border px-3 py-2 text-sm font-mono"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-text-secondary">Confirm Password</label>
+            <input
+              type="text"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              minLength={8}
+              className="w-full rounded-control border border-border px-3 py-2 text-sm font-mono"
+            />
+          </div>
+
+          <p className="text-xs text-text-secondary">
+            Write it down or tell them now — it can't be read back later. They can change it
+            themselves afterwards using the key icon in the top bar.
+          </p>
+
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={onClose} className="btn-secondary flex-1">
+              Cancel
+            </button>
+            <button type="submit" disabled={loading} className="btn-primary flex-1">
+              {loading ? "Saving..." : "Set Password"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

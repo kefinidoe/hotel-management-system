@@ -9,6 +9,7 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const rooms = await prisma.room.findMany({
+    where: { isActive: true },
     include: { roomType: true },
     orderBy: { number: "asc" },
   });

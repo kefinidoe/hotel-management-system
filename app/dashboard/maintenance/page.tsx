@@ -13,7 +13,10 @@ export default async function MaintenancePage() {
       include: { room: true, assignee: true },
       orderBy: { updatedAt: "desc" },
     }),
-    prisma.room.findMany({ orderBy: { number: "asc" } }),
+    prisma.room.findMany({
+      where: { isActive: true },
+      orderBy: { number: "asc" },
+    }),
     prisma.user.findMany({ where: { isActive: true }, select: { id: true, name: true, role: true } }),
   ]);
 

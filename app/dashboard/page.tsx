@@ -30,9 +30,9 @@ export default async function DashboardPage() {
     allItemsAgg,
     allPaymentsAgg,
   ] = await Promise.all([
-    prisma.room.count(),
-    prisma.room.count({ where: { status: "OCCUPIED" } }),
-    prisma.room.count({ where: { status: "AVAILABLE" } }),
+    prisma.room.count({ where: { isActive: true } }),
+    prisma.room.count({ where: { isActive: true, status: "OCCUPIED" } }),
+    prisma.room.count({ where: { isActive: true, status: "AVAILABLE" } }),
     prisma.reservation.count({
       where: { checkInDate: { gte: todayStart, lt: todayEnd }, status: { in: ["CONFIRMED", "PENDING"] } },
     }),

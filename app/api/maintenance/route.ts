@@ -45,18 +45,32 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "A ticket title is required." }, { status: 400 });
   }
 
+  const roomId = typeof body.roomId === "string" && body.roomId ? body.roomId : null;
+  if (roomId) {
+    const activeRoom = await prisma.room.findFirst({
+      where: { id: roomId, isActive: true },
+      select: { id: true },
+    });
+    if (!activeRoom) {
+      return NextResponse.json(
+        { error: "That room is no longer part of the active hotel inventory." },
+        { status: 400 }
+      );
+    }
+  }
+
   const ticket = await prisma.maintenanceTicket.create({
     data: {
       title: body.title,
       description: body.description || null,
       priority: body.priority || "normal",
-      roomId: body.roomId || null,
+      roomId,
       status: "OPEN",
     },
   });
 
-  if (body.roomId && body.takeOutOfService) {
-    await prisma.room.update({ where: { id: body.roomId }, data: { status: "MAINTENANCE" } });
+  if (roomId && body.takeOutOfService) {
+    await prisma.room.update({ where: { id: roomId }, data: { status: "MAINTENANCE" } });
   }
 
   return NextResponse.json(ticket, { status: 201 });

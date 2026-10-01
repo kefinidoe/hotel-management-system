@@ -34,12 +34,24 @@
    ```
    npm run seed
    ```
-   This prints a login you can use:
-   - email: `admin@hotel.com`
-   - password: `Admin123!`
+   This prints the admin login **once** — a randomly generated password, shown
+   in a box in your terminal. Copy it there and then; it is never stored in
+   plain text and cannot be read back later.
 
-   (Change this password before showing the app to your client — it's just
-   for development.)
+   To choose the password yourself instead:
+   ```
+   SEED_ADMIN_PASSWORD='your-strong-password' npm run seed
+   ```
+
+   There is deliberately **no default password** in this repo. It is public, so
+   a hard-coded one would be a published credential.
+
+   Forgot it later, or need to rotate it on a live system?
+   ```
+   npm run reset-password -- admin@hotel.com     # generates a new one
+   npm run reset-password -- --list              # show every account
+   ```
+   Or, once signed in, click the **key icon** next to your name in the top bar.
 
 4. **Start the app:**
    ```

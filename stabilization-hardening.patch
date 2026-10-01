@@ -1,0 +1,985 @@
+diff --git a/.env.example b/.env.example
+index 1a14b17..abc46b8 100644
+--- a/.env.example
++++ b/.env.example
+@@ -1,5 +1,13 @@
+ # PostgreSQL connection string
+-DATABASE_URL="postgresql://USER:hotel management system@localhost:5432/hms?schema=public"
++# NOTE: passwords must be URL-encoded (spaces become %20). Never commit real values.
++DATABASE_URL="postgresql://USER:PASSWORD@localhost:5432/hms?schema=public"
++
++# Required by prisma/schema.prisma (datasource.directUrl). For a local Postgres
++# this is normally the same value as DATABASE_URL. On pooled providers
++# (Supabase/Neon) this is the direct, non-pooled connection string.
++# Without it, `npx prisma migrate` fails with:
++#   P1012: Environment variable not found: DIRECT_URL.
++DIRECT_URL="postgresql://USER:PASSWORD@localhost:5432/hms?schema=public"
+ 
+ # NextAuth
+ NEXTAUTH_SECRET="generate-a-long-random-string"
+diff --git a/.nvmrc b/.nvmrc
+new file mode 100644
+index 0000000..2bd5a0a
+--- /dev/null
++++ b/.nvmrc
+@@ -0,0 +1 @@
++22
+diff --git a/STEP2-README.md b/STEP2-README.md
+index f2cee7d..b5e291e 100644
+--- a/STEP2-README.md
++++ b/STEP2-README.md
+@@ -34,12 +34,24 @@
+    ```
+    npm run seed
+    ```
+-   This prints a login you can use:
+-   - email: `admin@hotel.com`
+-   - password: `Admin123!`
++   This prints the admin login **once** — a randomly generated password, shown
++   in a box in your terminal. Copy it there and then; it is never stored in
++   plain text and cannot be read back later.
+ 
+-   (Change this password before showing the app to your client — it's just
+-   for development.)
++   To choose the password yourself instead:
++   ```
++   SEED_ADMIN_PASSWORD='your-strong-password' npm run seed
++   ```
++
++   There is deliberately **no default password** in this repo. It is public, so
++   a hard-coded one would be a published credential.
++
++   Forgot it later, or need to rotate it on a live system?
++   ```
++   npm run reset-password -- admin@hotel.com     # generates a new one
++   npm run reset-password -- --list              # show every account
++   ```
++   Or, once signed in, click the **key icon** next to your name in the top bar.
+ 
+ 4. **Start the app:**
+    ```
+diff --git a/app/api/profile/password/route.ts b/app/api/profile/password/route.ts
+new file mode 100644
+index 0000000..5b2f658
+--- /dev/null
++++ b/app/api/profile/password/route.ts
+@@ -0,0 +1,53 @@
++import { NextResponse } from "next/server";
++import bcrypt from "bcryptjs";
++import { requireAuth } from "@/lib/authz";
++import { prisma } from "@/lib/prisma";
++import { passwordProblem } from "@/lib/password";
++
++// Change YOUR OWN password. Any signed-in user, and it requires the current
++// password -- so a borrowed or stolen session alone isn't enough to lock the
++// real owner out of their account.
++//
++// NOTE: sessions are JWTs, so a session already open elsewhere stays valid until
++// it expires. This stops the OLD password being used to sign in again; it does
++// not kick out a session someone already holds. If you're rotating because you
++// suspect compromise, also deactivate and re-enable the account.
++export async function POST(req: Request) {
++  const auth = await requireAuth();
++  if (auth instanceof NextResponse) return auth;
++
++  const body = await req.json();
++  const currentPassword = typeof body.currentPassword === "string" ? body.currentPassword : "";
++  const newPassword = body.newPassword;
++
++  const problem = passwordProblem(newPassword);
++  if (problem) return NextResponse.json({ error: problem }, { status: 400 });
++
++  const user = await prisma.user.findUnique({ where: { id: auth.user.id } });
++  if (!user) return NextResponse.json({ error: "Account not found." }, { status: 404 });
++  if (!user.isActive) {
++    return NextResponse.json({ error: "This account is deactivated." }, { status: 403 });
++  }
++
++  const currentOk = await bcrypt.compare(currentPassword, user.passwordHash);
++  if (!currentOk) {
++    return NextResponse.json({ error: "That current password isn't right." }, { status: 400 });
++  }
++
++  // Re-using the same password is the most common way a forced rotation ends up
++  // meaning nothing.
++  const sameAsBefore = await bcrypt.compare(newPassword, user.passwordHash);
++  if (sameAsBefore) {
++    return NextResponse.json(
++      { error: "The new password must be different from the current one." },
++      { status: 400 }
++    );
++  }
++
++  await prisma.user.update({
++    where: { id: user.id },
++    data: { passwordHash: await bcrypt.hash(newPassword, 10) },
++  });
++
++  return NextResponse.json({ ok: true });
++}
+diff --git a/app/api/staff/[id]/route.ts b/app/api/staff/[id]/route.ts
+index 53aa7e4..6c02110 100644
+--- a/app/api/staff/[id]/route.ts
++++ b/app/api/staff/[id]/route.ts
+@@ -1,6 +1,8 @@
+ import { NextResponse } from "next/server";
++import bcrypt from "bcryptjs";
+ import { prisma } from "@/lib/prisma";
+ import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
++import { passwordProblem } from "@/lib/password";
+ 
+ // Edit a staff member's role, department, or active status. ADMIN only,
+ // with two safety guards a real hotel system needs:
+@@ -42,14 +44,120 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
+     }
+   }
+ 
++  // Resetting someone else's password doesn't need their current one -- that's
++  // the point of an admin reset (forgotten password, rotating off a shared
++  // account). Use POST /api/profile/password for your own.
++  let passwordHash: string | undefined;
++  if (body.newPassword !== undefined) {
++    const problem = passwordProblem(body.newPassword);
++    if (problem) return NextResponse.json({ error: problem }, { status: 400 });
++    passwordHash = await bcrypt.hash(body.newPassword, 10);
++  }
++
+   const updated = await prisma.user.update({
+     where: { id },
+     data: {
+       role: body.role ?? undefined,
+       department: body.department ?? undefined,
+       isActive: body.isActive ?? undefined,
++      passwordHash,
+     },
+   });
+ 
+-  return NextResponse.json({ id: updated.id, role: updated.role, isActive: updated.isActive });
++  return NextResponse.json({
++    id: updated.id,
++    role: updated.role,
++    isActive: updated.isActive,
++    passwordReset: passwordHash !== undefined,
++  });
++}
++
++// Delete a staff account. ADMIN only.
++//
++// Two guards first, same spirit as PATCH above:
++//  1. You can't delete your own account -- that is how a hotel locks itself out.
++//  2. You can't delete the last active ADMIN.
++//
++// Then one decision. A staff member who has never *done* anything -- no
++// reservations, payments, stock movements, housekeeping or maintenance work,
++// purchases, wastage, expenses or audit entries -- is deleted for good; nothing
++// in the database points at them.
++//
++// Anyone with history is DEACTIVATED instead. Their account can no longer sign
++// in, so from the admin's point of view the account is gone, but the payments
++// they took and the records they touched keep a valid author. A true delete here
++// would either fail on a foreign key or -- worse, if those relations were ever
++// loosened -- leave financial records pointing at nobody. This mirrors how
++// inventory items (delete if unused, deactivate if used) and guests (archive,
++// never delete) are already handled elsewhere in this codebase.
++export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
++  const { id } = await params;
++  const auth = await requireAuth();
++  if (auth instanceof NextResponse) return auth;
++
++  const forbidden = requireRole(auth, ROLE_GROUPS.STAFF_ADMIN);
++  if (forbidden) return forbidden;
++
++  const target = await prisma.user.findUnique({ where: { id } });
++  if (!target) return NextResponse.json({ error: "Staff member not found." }, { status: 404 });
++
++  if (target.id === auth.user.id) {
++    return NextResponse.json({ error: "You can't delete your own account." }, { status: 400 });
++  }
++
++  // Only guard the last admin if this one can currently sign in -- deleting an
++  // already-deactivated admin can't reduce the number of usable admin accounts.
++  if (target.role === "ADMIN" && target.isActive) {
++    const otherActiveAdmins = await prisma.user.count({
++      where: { role: "ADMIN", isActive: true, id: { not: target.id } },
++    });
++    if (otherActiveAdmins === 0) {
++      return NextResponse.json(
++        { error: "This is the last active admin account -- promote someone else to admin first." },
++        { status: 400 }
++      );
++    }
++  }
++
++  const [
++    reservations,
++    payments,
++    housekeepingTasks,
++    maintenanceTickets,
++    purchases,
++    wastages,
++    expenses,
++    stockMovements,
++    auditLogs,
++  ] = await Promise.all([
++    prisma.reservation.count({ where: { createdById: target.id } }),
++    prisma.payment.count({ where: { cashierId: target.id } }),
++    prisma.housekeepingTask.count({ where: { assigneeId: target.id } }),
++    prisma.maintenanceTicket.count({ where: { assigneeId: target.id } }),
++    prisma.purchase.count({ where: { createdById: target.id } }),
++    prisma.wastage.count({ where: { recordedById: target.id } }),
++    prisma.expense.count({ where: { requestedById: target.id } }),
++    prisma.stockMovement.count({ where: { userId: target.id } }),
++    prisma.auditLog.count({ where: { userId: target.id } }),
++  ]);
++
++  const hasHistory =
++    reservations +
++      payments +
++      housekeepingTasks +
++      maintenanceTickets +
++      purchases +
++      wastages +
++      expenses +
++      stockMovements +
++      auditLogs >
++    0;
++
++  if (!hasHistory) {
++    await prisma.user.delete({ where: { id: target.id } });
++    return NextResponse.json({ ok: true, mode: "deleted", name: target.name });
++  }
++
++  await prisma.user.update({ where: { id: target.id }, data: { isActive: false } });
++  return NextResponse.json({ ok: true, mode: "deactivated", name: target.name });
+ }
+\ No newline at end of file
+diff --git a/components/ChangePasswordModal.tsx b/components/ChangePasswordModal.tsx
+new file mode 100644
+index 0000000..c17376e
+--- /dev/null
++++ b/components/ChangePasswordModal.tsx
+@@ -0,0 +1,131 @@
++"use client";
++
++import { useState } from "react";
++import { X } from "lucide-react";
++
++// Change your own password. Requires the current one, so having a borrowed or
++// stolen session isn't enough to take over the account.
++export default function ChangePasswordModal({ onClose }: { onClose: () => void }) {
++  const [currentPassword, setCurrentPassword] = useState("");
++  const [newPassword, setNewPassword] = useState("");
++  const [confirmPassword, setConfirmPassword] = useState("");
++  const [error, setError] = useState<string | null>(null);
++  const [done, setDone] = useState(false);
++  const [loading, setLoading] = useState(false);
++
++  async function submit(e: React.FormEvent) {
++    e.preventDefault();
++    setError(null);
++
++    if (newPassword !== confirmPassword) {
++      setError("The two new passwords don't match.");
++      return;
++    }
++    if (newPassword.length < 8) {
++      setError("Password must be at least 8 characters.");
++      return;
++    }
++
++    setLoading(true);
++    const res = await fetch("/api/profile/password", {
++      method: "POST",
++      headers: { "Content-Type": "application/json" },
++      body: JSON.stringify({ currentPassword, newPassword }),
++    });
++    setLoading(false);
++
++    const data = await res.json().catch(() => ({}));
++    if (!res.ok) {
++      setError(data.error ?? "Could not change your password.");
++      return;
++    }
++
++    setDone(true);
++    setCurrentPassword("");
++    setNewPassword("");
++    setConfirmPassword("");
++  }
++
++  return (
++    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4">
++      <div className="card w-full max-w-sm">
++        <div className="flex items-center justify-between mb-4">
++          <h2>Change Password</h2>
++          <button onClick={onClose} className="text-text-secondary hover:text-text-primary">
++            <X size={18} />
++          </button>
++        </div>
++
++        {done ? (
++          <div className="space-y-4">
++            <p className="text-sm text-success bg-success/5 border border-success/20 rounded-control px-3 py-2">
++              Your password has been changed. Use the new one next time you sign in.
++            </p>
++            <p className="text-xs text-text-secondary">
++              Sessions already open elsewhere stay signed in until they expire. If you think
++              someone else had your old password, ask an admin to deactivate and re-enable your
++              account to force those sessions out.
++            </p>
++            <button onClick={onClose} className="btn-primary w-full">
++              Done
++            </button>
++          </div>
++        ) : (
++          <form onSubmit={submit} className="space-y-3">
++            {error && (
++              <p className="text-sm text-danger bg-danger/5 border border-danger/20 rounded-control px-3 py-2">
++                {error}
++              </p>
++            )}
++
++            <div>
++              <label className="text-xs text-text-secondary">Current Password</label>
++              <input
++                type="password"
++                value={currentPassword}
++                onChange={(e) => setCurrentPassword(e.target.value)}
++                required
++                autoComplete="current-password"
++                className="w-full rounded-control border border-border px-3 py-2 text-sm"
++              />
++            </div>
++            <div>
++              <label className="text-xs text-text-secondary">New Password</label>
++              <input
++                type="password"
++                value={newPassword}
++                onChange={(e) => setNewPassword(e.target.value)}
++                required
++                minLength={8}
++                autoComplete="new-password"
++                placeholder="At least 8 characters"
++                className="w-full rounded-control border border-border px-3 py-2 text-sm"
++              />
++            </div>
++            <div>
++              <label className="text-xs text-text-secondary">Confirm New Password</label>
++              <input
++                type="password"
++                value={confirmPassword}
++                onChange={(e) => setConfirmPassword(e.target.value)}
++                required
++                minLength={8}
++                autoComplete="new-password"
++                className="w-full rounded-control border border-border px-3 py-2 text-sm"
++              />
++            </div>
++
++            <div className="flex gap-2 pt-1">
++              <button type="button" onClick={onClose} className="btn-secondary flex-1">
++                Cancel
++              </button>
++              <button type="submit" disabled={loading} className="btn-primary flex-1">
++                {loading ? "Saving..." : "Change Password"}
++              </button>
++            </div>
++          </form>
++        )}
++      </div>
++    </div>
++  );
++}
+diff --git a/components/Topbar.tsx b/components/Topbar.tsx
+index b7895cf..c5c6991 100644
+--- a/components/Topbar.tsx
++++ b/components/Topbar.tsx
+@@ -1,9 +1,11 @@
+ "use client";
+ 
+-import { Bell, HelpCircle, LogOut } from "lucide-react";
++import { useState } from "react";
++import { Bell, HelpCircle, KeyRound, LogOut } from "lucide-react";
+ import { signOut } from "next-auth/react";
+ import type { RoleName } from "@prisma/client";
+ import SearchBar from "@/components/SearchBar";
++import ChangePasswordModal from "@/components/ChangePasswordModal";
+ import { hasRole, ROLE_GROUPS } from "@/lib/permissions";
+ 
+ export default function Topbar({
+@@ -14,8 +16,11 @@ export default function Topbar({
+   userRole: RoleName;
+ }) {
+   const canSearchGuests = hasRole(userRole, ROLE_GROUPS.FRONT_DESK);
++  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+ 
+   return (
++    <>
++    {changePasswordOpen && <ChangePasswordModal onClose={() => setChangePasswordOpen(false)} />}
+     <header className="h-16 sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-border bg-surface/90 backdrop-blur px-6">
+       <div className="flex-1 max-w-md">
+         {canSearchGuests && <SearchBar />}
+@@ -42,6 +47,13 @@ export default function Topbar({
+           >
+             {userName.charAt(0).toUpperCase()}
+           </div>
++          <button
++            onClick={() => setChangePasswordOpen(true)}
++            title="Change my password"
++            className="text-text-secondary hover:text-primary-600"
++          >
++            <KeyRound size={18} strokeWidth={1.8} />
++          </button>
+           <button
+             onClick={() => signOut({ callbackUrl: "/login" })}
+             title="Sign out"
+@@ -52,5 +64,6 @@ export default function Topbar({
+         </div>
+       </div>
+     </header>
++    </>
+   );
+ }
+\ No newline at end of file
+diff --git a/components/staff/StaffClient.tsx b/components/staff/StaffClient.tsx
+index 73fe8ee..a4e8287 100644
+--- a/components/staff/StaffClient.tsx
++++ b/components/staff/StaffClient.tsx
+@@ -1,7 +1,7 @@
+ "use client";
+ 
+ import { useState } from "react";
+-import { Plus, X } from "lucide-react";
++import { KeyRound, Plus, Trash2, X } from "lucide-react";
+ 
+ type StaffRow = {
+   id: string;
+@@ -27,6 +27,7 @@ export default function StaffClient({
+ }) {
+   const [staff, setStaff] = useState(initialStaff);
+   const [addOpen, setAddOpen] = useState(false);
++  const [passwordTarget, setPasswordTarget] = useState<StaffRow | null>(null);
+   const [busyId, setBusyId] = useState<string | null>(null);
+ 
+   const isAdmin = currentUserRole === "ADMIN";
+@@ -63,6 +64,38 @@ export default function StaffClient({
+     setStaff((prev) => prev.map((s) => (s.id === id ? { ...s, isActive } : s)));
+   }
+ 
++  async function deleteStaff(member: StaffRow) {
++    if (
++      !confirm(
++        `Delete ${member.name}'s account?\n\nIf they've never created a reservation, taken a payment, or logged any ` +
++          `stock, housekeeping or maintenance work, the account is removed for good. If they have any history, the ` +
++          `account is deactivated instead (they can no longer sign in) so their past records still make sense.`
++      )
++    ) {
++      return;
++    }
++
++    setBusyId(member.id);
++    const res = await fetch(`/api/staff/${member.id}`, { method: "DELETE" });
++    setBusyId(null);
++    const data = await res.json().catch(() => ({}));
++
++    if (!res.ok) {
++      alert(data.error ?? "Could not delete this account.");
++      return;
++    }
++
++    if (data.mode === "deleted") {
++      setStaff((prev) => prev.filter((s) => s.id !== member.id));
++    } else {
++      setStaff((prev) => prev.map((s) => (s.id === member.id ? { ...s, isActive: false } : s)));
++      alert(
++        `${member.name} has work on record (payments, reservations or similar), so the account was deactivated ` +
++          `rather than deleted. They can no longer sign in, and their past records stay intact.`
++      );
++    }
++  }
++
+   return (
+     <div>
+       <div className="flex items-start justify-between mb-4">
+@@ -89,6 +122,7 @@ export default function StaffClient({
+               <th className="px-4 py-3 font-medium">Department</th>
+               <th className="px-4 py-3 font-medium">Status</th>
+               <th className="px-4 py-3 font-medium">Last Login</th>
++              {isAdmin && <th className="px-4 py-3 font-medium text-right">Actions</th>}
+             </tr>
+           </thead>
+           <tbody>
+@@ -140,6 +174,32 @@ export default function StaffClient({
+                   <td className="px-4 py-3 text-text-secondary">
+                     {s.lastLoginAt ? new Date(s.lastLoginAt).toLocaleString() : "Never"}
+                   </td>
++                  {isAdmin && (
++                    <td className="px-4 py-3 text-right">
++                      <div className="flex items-center justify-end gap-3 whitespace-nowrap">
++                        <button
++                          onClick={() => setPasswordTarget(s)}
++                          disabled={busyId === s.id}
++                          title={`Set a new password for ${s.name}`}
++                          className="inline-flex items-center gap-1 text-text-secondary text-xs font-medium hover:text-primary-600 hover:underline disabled:opacity-40"
++                        >
++                          <KeyRound size={14} />
++                          Set Password
++                        </button>
++                        {!isSelf && (
++                          <button
++                            onClick={() => deleteStaff(s)}
++                            disabled={busyId === s.id}
++                            title={`Delete ${s.name}'s account`}
++                            className="inline-flex items-center gap-1 text-danger text-xs font-medium hover:underline disabled:opacity-40"
++                          >
++                            <Trash2 size={14} />
++                            Delete
++                          </button>
++                        )}
++                      </div>
++                    </td>
++                  )}
+                 </tr>
+               );
+             })}
+@@ -156,6 +216,154 @@ export default function StaffClient({
+           }}
+         />
+       )}
++
++      {passwordTarget && (
++        <SetPasswordModal
++          member={passwordTarget}
++          onClose={() => setPasswordTarget(null)}
++          onDone={() => {
++            const member = passwordTarget;
++            setPasswordTarget(null);
++            if (member) {
++              alert(
++                `A new password is set for ${member.name}. Tell them in person or by phone — ` +
++                  `it can't be read back from the system later.`
++              );
++            }
++          }}
++        />
++      )}
++    </div>
++  );
++}
++
++// Admin sets a new password for someone else -- the "receptionist forgot their
++// password" path. No current password needed; the admin is already authenticated
++// and this route is ADMIN-only.
++function SetPasswordModal({
++  member,
++  onClose,
++  onDone,
++}: {
++  member: StaffRow;
++  onClose: () => void;
++  onDone: () => void;
++}) {
++  const [newPassword, setNewPassword] = useState("");
++  const [confirmPassword, setConfirmPassword] = useState("");
++  const [error, setError] = useState<string | null>(null);
++  const [loading, setLoading] = useState(false);
++
++  function generate() {
++    // Same shape as the CLI generator: unambiguous characters only, so it can be
++    // read out over the phone without "is that a one or an ell?".
++    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#%^*_=+";
++    let out = "";
++    const bytes = new Uint32Array(16);
++    crypto.getRandomValues(bytes);
++    for (let i = 0; i < 16; i++) out += alphabet[bytes[i] % alphabet.length];
++    setNewPassword(out);
++    setConfirmPassword(out);
++    setError(null);
++  }
++
++  async function submit(e: React.FormEvent) {
++    e.preventDefault();
++    setError(null);
++
++    if (newPassword !== confirmPassword) {
++      setError("The two passwords don't match.");
++      return;
++    }
++    if (newPassword.length < 8) {
++      setError("Password must be at least 8 characters.");
++      return;
++    }
++
++    setLoading(true);
++    const res = await fetch(`/api/staff/${member.id}`, {
++      method: "PATCH",
++      headers: { "Content-Type": "application/json" },
++      body: JSON.stringify({ newPassword }),
++    });
++    setLoading(false);
++
++    const data = await res.json().catch(() => ({}));
++    if (!res.ok) {
++      setError(data.error ?? "Could not set the password.");
++      return;
++    }
++    onDone();
++  }
++
++  return (
++    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4">
++      <div className="card w-full max-w-sm">
++        <div className="flex items-center justify-between mb-1">
++          <h2>Set Password</h2>
++          <button onClick={onClose} className="text-text-secondary hover:text-text-primary">
++            <X size={18} />
++          </button>
++        </div>
++        <p className="text-xs text-text-secondary mb-4">
++          for <span className="font-medium text-text-primary">{member.name}</span> ({member.email})
++        </p>
++
++        <form onSubmit={submit} className="space-y-3">
++          {error && (
++            <p className="text-sm text-danger bg-danger/5 border border-danger/20 rounded-control px-3 py-2">
++              {error}
++            </p>
++          )}
++
++          <div>
++            <div className="flex items-center justify-between">
++              <label className="text-xs text-text-secondary">New Password</label>
++              <button
++                type="button"
++                onClick={generate}
++                className="text-xs text-primary-600 hover:underline"
++              >
++                Generate one
++              </button>
++            </div>
++            <input
++              type="text"
++              value={newPassword}
++              onChange={(e) => setNewPassword(e.target.value)}
++              required
++              minLength={8}
++              placeholder="At least 8 characters"
++              className="w-full rounded-control border border-border px-3 py-2 text-sm font-mono"
++            />
++          </div>
++          <div>
++            <label className="text-xs text-text-secondary">Confirm Password</label>
++            <input
++              type="text"
++              value={confirmPassword}
++              onChange={(e) => setConfirmPassword(e.target.value)}
++              required
++              minLength={8}
++              className="w-full rounded-control border border-border px-3 py-2 text-sm font-mono"
++            />
++          </div>
++
++          <p className="text-xs text-text-secondary">
++            Write it down or tell them now — it can't be read back later. They can change it
++            themselves afterwards using the key icon in the top bar.
++          </p>
++
++          <div className="flex gap-2 pt-1">
++            <button type="button" onClick={onClose} className="btn-secondary flex-1">
++              Cancel
++            </button>
++            <button type="submit" disabled={loading} className="btn-primary flex-1">
++              {loading ? "Saving..." : "Set Password"}
++            </button>
++          </div>
++        </form>
++      </div>
+     </div>
+   );
+ }
+diff --git a/lib/password.ts b/lib/password.ts
+new file mode 100644
+index 0000000..2b30251
+--- /dev/null
++++ b/lib/password.ts
+@@ -0,0 +1,50 @@
++// Shared password rules and generation.
++//
++// Why this file exists: the repo previously shipped a hard-coded admin password
++// in both the seed script and the docs. Because this repository is public, that
++// made the default admin credential public knowledge -- anyone reading the code
++// could sign in as ADMIN on any deployment that kept it. Nothing in this file is
++// a secret; it exists so the default is never predictable again. (The old value
++// is deliberately not repeated here, so it can't be copy-pasted by mistake.)
++
++import { randomInt } from "crypto";
++
++export const MIN_PASSWORD_LENGTH = 8;
++
++// Ambiguous characters (0/O, 1/l/I) are deliberately absent so a password
++// copied by hand from a terminal, or read out over the phone, doesn't go wrong.
++const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#%^*_=+";
++
++const REQUIRED_CLASSES = [/[A-Z]/, /[a-z]/, /[0-9]/, /[^A-Za-z0-9]/];
++
++/** A strong, readable random password (~118 bits at the default length). */
++export function generatePassword(length = 20): string {
++  // Retry until the result contains an upper, a lower, a digit and a symbol, so
++  // it satisfies any complexity rule a deployment might add later.
++  for (let attempt = 0; attempt < 100; attempt++) {
++    let out = "";
++    for (let i = 0; i < length; i++) {
++      out += ALPHABET[randomInt(ALPHABET.length)];
++    }
++    if (REQUIRED_CLASSES.every((re) => re.test(out))) return out;
++  }
++  throw new Error("Could not generate a password.");
++}
++
++/**
++ * Returns a human-readable problem with a candidate password, or null if it's
++ * acceptable. Used by every endpoint that sets a password, so the rule can't
++ * drift between "create staff", "reset someone else's" and "change my own".
++ */
++export function passwordProblem(password: unknown): string | null {
++  if (typeof password !== "string" || password.length === 0) {
++    return "A new password is required.";
++  }
++  if (password.length < MIN_PASSWORD_LENGTH) {
++    return `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
++  }
++  if (password.length > 200) {
++    return "That password is too long.";
++  }
++  return null;
++}
+diff --git a/package.json b/package.json
+index 778ca17..53c3f86 100644
+--- a/package.json
++++ b/package.json
+@@ -14,7 +14,8 @@
+     "prisma:generate": "prisma generate",
+     "prisma:migrate": "prisma migrate dev",
+     "prisma:studio": "prisma studio",
+-    "seed": "tsx prisma/seed.ts"
++    "seed": "tsx prisma/seed.ts",
++    "reset-password": "tsx scripts/reset-password.ts"
+   },
+   "prisma": {
+     "seed": "tsx prisma/seed.ts"
+@@ -39,7 +40,7 @@
+     "@testing-library/jest-dom": "^7.0.1",
+     "@testing-library/react": "^16.3.3",
+     "@types/bcryptjs": "2.4.6",
+-    "@types/node": "20.14.11",
++    "@types/node": "^22.15.0",
+     "@types/react": "18.3.3",
+     "@types/react-dom": "18.3.0",
+     "@vitejs/plugin-react": "^6.1.1",
+diff --git a/prisma/seed.ts b/prisma/seed.ts
+index 9779e45..3ec9a44 100644
+--- a/prisma/seed.ts
++++ b/prisma/seed.ts
+@@ -1,26 +1,53 @@
+ import { PrismaClient, RoleName } from "@prisma/client";
+ import bcrypt from "bcryptjs";
++import { generatePassword } from "../lib/password";
+ 
+ const prisma = new PrismaClient();
+ 
+ async function main() {
+-  const passwordHash = await bcrypt.hash("Admin123!", 10);
++  const adminEmail = process.env.SEED_ADMIN_EMAIL || "admin@hotel.com";
+ 
+-  const admin = await prisma.user.upsert({
+-    where: { email: "admin@hotel.com" },
+-    update: {},
+-    create: {
+-      name: "Hotel Admin",
+-      email: "admin@hotel.com",
+-      passwordHash,
+-      role: RoleName.ADMIN,
+-      department: "Management",
+-    },
+-  });
++  // There is deliberately NO fixed fallback password here.
++  //
++  // This repository is public, so any hard-coded default is a *published*
++  // credential: anyone who reads the repo could sign in as ADMIN on any
++  // deployment that still had it. Instead we use SEED_ADMIN_PASSWORD when it's
++  // provided, and otherwise generate a strong random password and print it once,
++  // below. If the admin already exists, its password is never touched --
++  // re-running the seed must not silently reset a working login.
++  const existingAdmin = await prisma.user.findUnique({ where: { email: adminEmail } });
++
++  let admin = existingAdmin;
++  let newPassword: string | null = null;
++
++  if (!existingAdmin) {
++    newPassword = process.env.SEED_ADMIN_PASSWORD || generatePassword();
++    admin = await prisma.user.create({
++      data: {
++        name: "Hotel Admin",
++        email: adminEmail,
++        passwordHash: await bcrypt.hash(newPassword, 10),
++        role: RoleName.ADMIN,
++        department: "Management",
++      },
++    });
+ 
+-  console.log("Seeded admin login:");
+-  console.log("  email:    admin@hotel.com");
+-  console.log("  password: Admin123!");
++    console.log("");
++    console.log("  ┌─ Seeded admin login ─────────────────────────────────────────");
++    console.log(`  │  email:    ${adminEmail}`);
++    console.log(`  │  password: ${newPassword}`);
++    console.log("  │");
++    console.log("  │  Shown once. Save it now, then change it after your first");
++    console.log("  │  sign-in (key icon next to your name in the top bar).");
++    if (!process.env.SEED_ADMIN_PASSWORD) {
++      console.log("  │  Generated randomly -- set SEED_ADMIN_PASSWORD to choose one.");
++    }
++    console.log("  └──────────────────────────────────────────────────────────────");
++    console.log("");
++  } else {
++    console.log(`Admin ${adminEmail} already exists -- password left unchanged.`);
++    console.log(`  To set a new one:  npm run reset-password -- ${adminEmail}`);
++  }
+ 
+   // A couple of room types so later steps (rooms, reservations) have something to attach to.
+   const single = await prisma.roomType.upsert({
+@@ -297,7 +324,7 @@ async function main() {
+     });
+   }
+   console.log("Seeded recipes for English Breakfast, Beef Stew & Ugali, and Grilled Chicken & Chips.");
+-  console.log(`Admin user id: ${admin.id}`);
++  console.log(`Admin user id: ${admin?.id}`);
+ }
+ 
+ main()
+diff --git a/scripts/reset-password.ts b/scripts/reset-password.ts
+new file mode 100644
+index 0000000..04acfc8
+--- /dev/null
++++ b/scripts/reset-password.ts
+@@ -0,0 +1,104 @@
++// Set a staff member's password from the command line.
++//
++// This is the break-glass path: for when nobody can sign in, or when you want to
++// rotate the admin password on a live deployment without opening the UI.
++//
++//   npm run reset-password -- admin@hotel.com                # generates a strong one
++//   npm run reset-password -- admin@hotel.com 'MyNewPw!'     # sets one you choose
++//   npm run reset-password -- --list                         # list accounts
++//
++// It only ever writes a bcrypt hash -- never a plaintext password -- and it tells
++// you what it did. It runs against whatever DATABASE_URL points at, so be sure
++// that's the database you mean to change.
++
++import { PrismaClient } from "@prisma/client";
++import bcrypt from "bcryptjs";
++import { generatePassword, passwordProblem } from "../lib/password";
++
++const prisma = new PrismaClient();
++
++async function main() {
++  const args = process.argv.slice(2);
++
++  if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
++    console.log(`
++Usage:
++  npm run reset-password -- <email> [newPassword]
++  npm run reset-password -- --list
++
++  <email>        the account to change
++  [newPassword]  optional. Omit it and a strong random password is generated
++                 and printed once.
++  --list         show every account (name, email, role, active)
++`);
++    return;
++  }
++
++  if (args[0] === "--list") {
++    const users = await prisma.user.findMany({
++      select: { name: true, email: true, role: true, isActive: true, lastLoginAt: true },
++      orderBy: { name: "asc" },
++    });
++    if (users.length === 0) {
++      console.log("No accounts yet. Run `npm run seed` or create one in the app.");
++      return;
++    }
++    console.log("");
++    for (const u of users) {
++      const status = u.isActive ? "active  " : "INACTIVE";
++      const last = u.lastLoginAt ? u.lastLoginAt.toISOString().slice(0, 10) : "never";
++      console.log(
++        `  ${status}  ${u.role.padEnd(12)}  ${u.email.padEnd(28)}  ${u.name}  (last login: ${last})`
++      );
++    }
++    console.log("");
++    return;
++  }
++
++  const email = args[0];
++  const provided = args[1];
++
++  if (provided !== undefined) {
++    const problem = passwordProblem(provided);
++    if (problem) {
++      console.error(`\n  ${problem}\n`);
++      process.exitCode = 1;
++      return;
++    }
++  }
++
++  const user = await prisma.user.findUnique({ where: { email } });
++  if (!user) {
++    console.error(`\n  No account found with email "${email}".`);
++    console.error(`  Run:  npm run reset-password -- --list\n`);
++    process.exitCode = 1;
++    return;
++  }
++
++  const password = provided ?? generatePassword();
++
++  await prisma.user.update({
++    where: { id: user.id },
++    data: { passwordHash: await bcrypt.hash(password, 10) },
++  });
++
++  console.log("");
++  console.log(`  Password updated for ${user.name} <${user.email}> (${user.role})`);
++  if (provided === undefined) {
++    console.log("");
++    console.log(`    ${password}`);
++    console.log("");
++    console.log("  Shown once. Sign in with it, then change it in the app.");
++  }
++  console.log("");
++  console.log("  Note: sessions that are already open stay valid until they expire.");
++  console.log("  Anyone currently signed in as this account is not logged out by this.");
++  console.log("");
++}
++
++main()
++  .catch((err) => {
++    console.error("\n  Could not reset the password:", err instanceof Error ? err.message : err, "\n");
++    process.exitCode = 1;
++  })
++  .finally(() => prisma.$disconnect());
+diff --git a/vitest.config.ts b/vitest.config.ts
+index aead5f7..7261c2c 100644
+--- a/vitest.config.ts
++++ b/vitest.config.ts
+@@ -4,7 +4,9 @@ import path from 'path';
+ export default defineConfig({
+   test: {
+     globals: true,
+-    environment: 'jsdom',
++    // 'node', not 'jsdom': no test currently renders a component, and jsdom@30
++    // pulls undici@8 which crashes on Node < 22.22 before a single test runs.
++    environment: 'node',
+     setupFiles: ['./vitest.setup.ts'],
+     coverage: {
+       provider: 'v8',

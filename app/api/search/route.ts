@@ -52,7 +52,10 @@ export async function GET(req: Request) {
       orderBy: { createdAt: "desc" },
     }),
     prisma.room.findMany({
-      where: { number: { contains: q, mode: "insensitive" } },
+      where: {
+        isActive: true,
+        number: { contains: q, mode: "insensitive" },
+      },
       select: { id: true, number: true, status: true },
       take: RESULT_LIMIT,
       orderBy: { number: "asc" },

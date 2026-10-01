@@ -10,6 +10,7 @@ export async function GET() {
   if (forbidden) return forbidden;
 
   const tasks = await prisma.housekeepingTask.findMany({
+    where: { room: { isActive: true } },
     include: { room: { include: { roomType: true } }, assignee: true },
     orderBy: { updatedAt: "desc" },
   });

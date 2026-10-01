@@ -1,26 +1,53 @@
 import { PrismaClient, RoleName } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { generatePassword } from "../lib/password";
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const passwordHash = await bcrypt.hash("Admin123!", 10);
+  const adminEmail = process.env.SEED_ADMIN_EMAIL || "admin@hotel.com";
 
-  const admin = await prisma.user.upsert({
-    where: { email: "admin@hotel.com" },
-    update: {},
-    create: {
-      name: "Hotel Admin",
-      email: "admin@hotel.com",
-      passwordHash,
-      role: RoleName.ADMIN,
-      department: "Management",
-    },
-  });
+  // There is deliberately NO fixed fallback password here.
+  //
+  // This repository is public, so any hard-coded default is a *published*
+  // credential: anyone who reads the repo could sign in as ADMIN on any
+  // deployment that still had it. Instead we use SEED_ADMIN_PASSWORD when it's
+  // provided, and otherwise generate a strong random password and print it once,
+  // below. If the admin already exists, its password is never touched --
+  // re-running the seed must not silently reset a working login.
+  const existingAdmin = await prisma.user.findUnique({ where: { email: adminEmail } });
 
-  console.log("Seeded admin login:");
-  console.log("  email:    admin@hotel.com");
-  console.log("  password: Admin123!");
+  let admin = existingAdmin;
+  let newPassword: string | null = null;
+
+  if (!existingAdmin) {
+    newPassword = process.env.SEED_ADMIN_PASSWORD || generatePassword();
+    admin = await prisma.user.create({
+      data: {
+        name: "Hotel Admin",
+        email: adminEmail,
+        passwordHash: await bcrypt.hash(newPassword, 10),
+        role: RoleName.ADMIN,
+        department: "Management",
+      },
+    });
+
+    console.log("");
+    console.log("  ┌─ Seeded admin login ─────────────────────────────────────────");
+    console.log(`  │  email:    ${adminEmail}`);
+    console.log(`  │  password: ${newPassword}`);
+    console.log("  │");
+    console.log("  │  Shown once. Save it now, then change it after your first");
+    console.log("  │  sign-in (key icon next to your name in the top bar).");
+    if (!process.env.SEED_ADMIN_PASSWORD) {
+      console.log("  │  Generated randomly -- set SEED_ADMIN_PASSWORD to choose one.");
+    }
+    console.log("  └──────────────────────────────────────────────────────────────");
+    console.log("");
+  } else {
+    console.log(`Admin ${adminEmail} already exists -- password left unchanged.`);
+    console.log(`  To set a new one:  npm run reset-password -- ${adminEmail}`);
+  }
 
   // A couple of room types so later steps (rooms, reservations) have something to attach to.
   const single = await prisma.roomType.upsert({
@@ -297,7 +324,7 @@ async function main() {
     });
   }
   console.log("Seeded recipes for English Breakfast, Beef Stew & Ugali, and Grilled Chicken & Chips.");
-  console.log(`Admin user id: ${admin.id}`);
+  console.log(`Admin user id: ${admin?.id}`);
 }
 
 main()

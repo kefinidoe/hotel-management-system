@@ -146,11 +146,14 @@ export async function POST(req: Request) {
         const [room, tariff] = await Promise.all([
           tx.room.findUnique({
             where: { id: roomId },
-            select: { id: true, isTwin: true },
+            select: { id: true, isTwin: true, isActive: true },
           }),
           tx.roomType.findUnique({ where: { id: tariffId } }),
         ]);
         if (!room) throw new ReservationError("Room not found.", 404);
+        if (!room.isActive) {
+          throw new ReservationError("That room is no longer part of the active hotel inventory.");
+        }
         if (!tariff) throw new ReservationError("The selected tariff is unavailable.", 404);
 
         if ((room.isTwin && occupancy !== "TWIN") || (!room.isTwin && occupancy === "TWIN")) {

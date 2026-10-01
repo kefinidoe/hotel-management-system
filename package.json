@@ -14,7 +14,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx prisma/seed.ts",
+    "reset-password": "tsx scripts/reset-password.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -39,7 +40,7 @@
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@types/bcryptjs": "2.4.6",
-    "@types/node": "20.14.11",
+    "@types/node": "^22.15.0",
     "@types/react": "18.3.3",
     "@types/react-dom": "18.3.0",
     "@vitejs/plugin-react": "^6.1.1",

@@ -348,13 +348,20 @@ function RoomDetailModal({
   }
 
   async function remove() {
-    if (!confirm(`Delete room ${room.number}?`)) return;
+    if (
+      !confirm(
+        `Remove room ${room.number} from the hotel? It will disappear from active rooms and future bookings, while existing history will be kept.`
+      )
+    ) {
+      return;
+    }
     setLoading(true);
+    onError(null);
     const res = await fetch(`/api/rooms/${room.id}`, { method: "DELETE" });
     setLoading(false);
     if (!res.ok) {
       const data = await res.json();
-      onError(data.error || "Could not delete room.");
+      onError(data.error || "Could not remove room from the hotel.");
       return;
     }
     onSaved();
@@ -410,7 +417,7 @@ function RoomDetailModal({
               {loading ? "Saving..." : "Save Changes"}
             </button>
             <button onClick={remove} disabled={loading} className="btn-secondary text-danger">
-              Delete
+              Remove from hotel
             </button>
           </div>
         ) : (

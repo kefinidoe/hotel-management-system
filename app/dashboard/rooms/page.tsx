@@ -10,6 +10,7 @@ export default async function RoomsPage() {
   const [rooms, roomTypes] = await Promise.all([
     prisma.room.findMany({
       relationLoadStrategy: "join",
+      where: { isActive: true },
       include: { roomType: true },
       orderBy: { number: "asc" },
     }),

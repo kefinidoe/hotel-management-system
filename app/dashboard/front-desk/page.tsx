@@ -97,6 +97,7 @@ export default async function FrontDeskPage() {
     }),
     prisma.room.findMany({
       relationLoadStrategy: "join",
+      where: { isActive: true },
       include: { roomType: true },
       orderBy: { number: "asc" },
     }),
