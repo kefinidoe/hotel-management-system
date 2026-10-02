@@ -4,6 +4,8 @@ import { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { requireRole, ROLE_GROUPS } from "@/lib/authz";
+import { rangesOverlap } from "@/lib/dates";
+import { blocksGuestPlacement, isBookableToday, ROOM_STATUS_LABELS } from "@/lib/room-status";
 import {
   accommodationRequired,
   parseMoney,
@@ -44,6 +46,10 @@ export async function POST(req: Request) {
     typeof body.paymentMethodId === "string" ? body.paymentMethodId.trim() : "";
   const reference = typeof body.reference === "string" ? body.reference.trim() : "";
 
+  // Optional: the receptionist moved the guest to a different room because the
+  // reserved one is dirty, under maintenance, or otherwise unusable.
+  const newRoomId = typeof body.newRoomId === "string" ? body.newRoomId.trim() : "";
+
   try {
     const result = await prisma.$transaction(
       async (tx) => {
@@ -60,6 +66,75 @@ export async function POST(req: Request) {
         }
         if (reservation.folios.length > 0) {
           throw new CheckInError("This reservation already has a folio and cannot be checked in again.");
+        }
+
+        if (newRoomId && reservation.rooms.length > 1) {
+          throw new CheckInError(
+            "This reservation holds more than one room. Change rooms from the reservation instead."
+          );
+        }
+
+        // Room change: only into a room that is free and clean, never into one
+        // that is occupied, dirty or under maintenance.
+        let assignedRoom: { id: string; number: string } | null =
+          reservation.rooms[0]?.room ?? null;
+        if (newRoomId && newRoomId !== assignedRoom?.id) {
+          const target = await tx.room.findUnique({
+            where: { id: newRoomId },
+            select: { id: true, number: true, status: true, isActive: true },
+          });
+          if (!target) throw new CheckInError("The room you selected was not found.", 404);
+          if (!target.isActive) {
+            throw new CheckInError(
+              `Room ${target.number} is no longer part of the hotel's active rooms. Choose another.`
+            );
+          }
+          if (!isBookableToday(target.status)) {
+            throw new CheckInError(
+              `Room ${target.number} is ${ROOM_STATUS_LABELS[target.status]}. Choose an available room.`
+            );
+          }
+
+          const otherStays = await tx.reservationRoom.findMany({
+            where: {
+              roomId: target.id,
+              reservation: { status: { notIn: ["CANCELLED", "NO_SHOW"] }, id: { not: reservation.id } },
+            },
+            include: { reservation: true },
+          });
+          const clash = otherStays.find((stay) =>
+            rangesOverlap(
+              reservation.checkInDate,
+              reservation.checkOutDate,
+              stay.reservation.checkInDate,
+              stay.reservation.checkOutDate
+            )
+          );
+          if (clash) {
+            throw new CheckInError(
+              `Room ${target.number} is already booked for these dates. Choose another room.`
+            );
+          }
+
+          await tx.reservationRoom.update({
+            where: { id: reservation.rooms[0].id },
+            data: { roomId: target.id },
+          });
+          assignedRoom = { id: target.id, number: target.number };
+        }
+
+        // The guest cannot be put into a room that is unfit, even if the client
+        // that sent this request would have allowed it.
+        if (assignedRoom) {
+          const current = await tx.room.findUnique({
+            where: { id: assignedRoom.id },
+            select: { status: true, number: true },
+          });
+          if (current && newRoomId === "" && blocksGuestPlacement(current.status)) {
+            throw new CheckInError(
+              `Room ${current.number} is ${ROOM_STATUS_LABELS[current.status]}. Choose an available room, or ask housekeeping to finish it first.`
+            );
+          }
         }
 
         let nights: number;
@@ -99,11 +174,15 @@ export async function POST(req: Request) {
 
         for (const reservationRoom of reservation.rooms) {
           const unitPrice = Number(reservationRoom.rate);
+          const roomNumber =
+            assignedRoom && reservationRoom.roomId === reservation.rooms[0]?.roomId
+              ? assignedRoom.number
+              : reservationRoom.room.number;
           await tx.folioItem.create({
             data: {
               folioId: folio.id,
               type: "ROOM_CHARGE",
-              description: `Room ${reservationRoom.room.number} — ${nights} night(s)`,
+              description: `Room ${roomNumber} — ${nights} night(s)`,
               quantity: nights,
               unitPrice,
               taxRate: 0,
@@ -148,8 +227,12 @@ export async function POST(req: Request) {
         });
 
         for (const reservationRoom of reservation.rooms) {
+          const roomId =
+            assignedRoom && reservationRoom.roomId === reservation.rooms[0]?.roomId
+              ? assignedRoom.id
+              : reservationRoom.roomId;
           await tx.room.update({
-            where: { id: reservationRoom.roomId },
+            where: { id: roomId },
             data: { status: "OCCUPIED" },
           });
         }

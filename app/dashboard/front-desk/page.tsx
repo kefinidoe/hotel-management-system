@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import FrontDeskClient from "@/components/frontdesk/FrontDeskClient";
 import { requirePageRole } from "@/lib/page-auth";
 import { ROLE_GROUPS } from "@/lib/permissions";
+import { isBookableToday } from "@/lib/room-status";
 import {
   accommodationRequired,
   folioTotals,
@@ -64,6 +65,7 @@ function serializeReservation(reservation: FrontDeskReservation) {
     guestName: reservation.guest.fullName,
     checkInDate: reservation.checkInDate.toISOString(),
     checkOutDate: reservation.checkOutDate.toISOString(),
+    roomId: reservation.rooms[0]?.room.id ?? "",
     roomNumbers: reservation.rooms.map((room) => room.room.number).join(", "),
     openFolioId: openFolio?.id ?? null,
     requiredAmount: totals.required,
@@ -97,6 +99,8 @@ export default async function FrontDeskPage() {
     }),
     prisma.room.findMany({
       relationLoadStrategy: "join",
+      // Retired rooms keep their history but are not part of the rooms a guest
+      // can be given, so they never appear on the board.
       where: { isActive: true },
       include: { roomType: true },
       orderBy: { number: "asc" },
@@ -129,13 +133,14 @@ export default async function FrontDeskPage() {
       arrivals={arrivals.map(serializeReservation)}
       departures={departures.map(serializeReservation)}
       inHouse={inHouse.map(serializeReservation)}
-      availableRoomsCount={rooms.filter((room) => room.status === "AVAILABLE").length}
+      availableRoomsCount={rooms.filter((room) => isBookableToday(room.status)).length}
       rooms={rooms.map((room) => ({
         id: room.id,
         number: room.number,
+        floor: room.floor,
+        status: room.status,
         roomTypeName: room.roomType.name,
         baseRate: Number(room.roomType.baseRate),
-        isTwin: room.isTwin,
       }))}
     />
   );

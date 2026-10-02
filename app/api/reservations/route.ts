@@ -8,10 +8,10 @@ import { requireRole, ROLE_GROUPS } from "@/lib/authz";
 import { accommodationRequired, parseMoney, stayNights } from "@/lib/billing";
 import { hasRole } from "@/lib/permissions";
 import { nextReservationCode } from "@/lib/reservation-code";
+import { isMealPlan, isOccupancy, tariffMatches } from "@/lib/tariffs";
+import { blocksGuestPlacement, ROOM_STATUS_LABELS } from "@/lib/room-status";
 
 const BOOKING_SOURCES = ["WALK_IN", "PHONE", "WEBSITE", "OTA", "CORPORATE", "OTHER"] as const;
-const OCCUPANCIES = ["SINGLE", "DOUBLE", "TWIN"] as const;
-const MEAL_PLANS = ["BED_ONLY", "BED_AND_BREAKFAST"] as const;
 
 class ReservationError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -82,8 +82,8 @@ export async function POST(req: Request) {
   const vehicleRegistration = text(body.vehicleRegistration);
   const roomId = text(body.roomId);
   const tariffId = text(body.tariffId);
-  const occupancy = OCCUPANCIES.find((value) => value === body.occupancy);
-  const mealPlan = MEAL_PLANS.find((value) => value === body.mealPlan);
+  const occupancy = isOccupancy(body.occupancy) ? body.occupancy : undefined;
+  const mealPlan = isMealPlan(body.mealPlan) ? body.mealPlan : undefined;
   const notes = text(body.notes);
 
   if (
@@ -146,7 +146,7 @@ export async function POST(req: Request) {
         const [room, tariff] = await Promise.all([
           tx.room.findUnique({
             where: { id: roomId },
-            select: { id: true, isTwin: true, isActive: true },
+            select: { id: true, number: true, status: true, isActive: true },
           }),
           tx.roomType.findUnique({ where: { id: tariffId } }),
         ]);
@@ -156,21 +156,22 @@ export async function POST(req: Request) {
         }
         if (!tariff) throw new ReservationError("The selected tariff is unavailable.", 404);
 
-        if ((room.isTwin && occupancy !== "TWIN") || (!room.isTwin && occupancy === "TWIN")) {
-          throw new ReservationError("That occupancy option is not available for the selected room.");
+        // A stay starting today needs a room that is fit to receive a guest.
+        // For a future booking the status now says nothing about that date, so
+        // that is left to the overlap check below.
+        const startOf = (date: Date) =>
+          new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+        if (startOf(checkIn) === startOf(new Date()) && blocksGuestPlacement(room.status)) {
+          throw new ReservationError(
+            `Room ${room.number} is ${ROOM_STATUS_LABELS[room.status]}. Choose an available room.`
+          );
         }
 
-        const expectedCategory = room.isTwin
-          ? "Twin"
-          : occupancy === "DOUBLE"
-          ? "Double"
-          : "Single";
-        if (
-          !tariff.name.toLowerCase().startsWith(expectedCategory.toLowerCase()) ||
-          tariff.mealPlan !== mealPlan
-        ) {
+        // Every room can be sold as Single, Double or Twin: the occupancy and
+        // meal plan the receptionist chose decide the price, not the room.
+        if (!tariffMatches(tariff.name, tariff.mealPlan, occupancy, mealPlan)) {
           throw new ReservationError(
-            "The selected tariff does not match the room, occupancy, and meal plan."
+            "The selected tariff does not match the occupancy and meal plan."
           );
         }
 

@@ -160,9 +160,9 @@ async function main() {
   // One-time real-room-list migration: rooms 101/102 were placeholder test
   // rooms with made-up tariffs. Clear anything attached to them, then
   // replace with Axis Hotel Nakuru's real 26 rooms across floors 1-4.
-  // Rooms 27 and 28 are the only fixed twin-bed rooms; every other room is
-  // flexible (Single or Double chosen at check-in), so isTwin marks only
-  // those two.
+  // Rooms 27 and 28 are the ones with twin beds, so their default tariff label
+  // is the Twin one. That is only a label: occupancy is chosen per booking for
+  // every room, and no room is restricted to one occupancy.
   // Find every room still on the old placeholder tariffs, whatever it's
   // named -- not just 101/102 -- in case anything else got created
   // through the UI while those were still the only types available.
@@ -229,7 +229,7 @@ async function main() {
     name: string;
     baseRate: number;
     capacity: number;
-    mealPlan: "BED_ONLY" | "BED_AND_BREAKFAST";
+    mealPlan: "BED_ONLY" | "BED_AND_BREAKFAST" | "HALF_BOARD";
   }[] = [
     { id: "tariff-single-bo", name: "Single — Bed Only", baseRate: 2000, capacity: 1, mealPlan: "BED_ONLY" },
     { id: "tariff-single-bb", name: "Single — B&B", baseRate: 2400, capacity: 1, mealPlan: "BED_AND_BREAKFAST" },
@@ -237,6 +237,9 @@ async function main() {
     { id: "tariff-double-bb", name: "Double — B&B", baseRate: 3300, capacity: 2, mealPlan: "BED_AND_BREAKFAST" },
     { id: "tariff-triple-bo", name: "Triple — Bed Only", baseRate: 3000, capacity: 3, mealPlan: "BED_ONLY" },
     { id: "tariff-triple-bb", name: "Triple — B&B", baseRate: 3800, capacity: 3, mealPlan: "BED_AND_BREAKFAST" },
+    { id: "tariff-single-hb", name: "Single — Half Board", baseRate: 3400, capacity: 1, mealPlan: "HALF_BOARD" },
+    { id: "tariff-double-hb", name: "Double — Half Board", baseRate: 5300, capacity: 2, mealPlan: "HALF_BOARD" },
+    { id: "tariff-triple-hb", name: "Twin — Half Board", baseRate: 5800, capacity: 2, mealPlan: "HALF_BOARD" },
   ];
   for (const t of tariffs) {
     await prisma.roomType.upsert({
@@ -245,7 +248,7 @@ async function main() {
       create: t,
     });
   }
-  console.log("Seeded the 6 real Axis Hotel tariff room types (Single/Double/Triple x Bed Only/B&B).");
+  console.log("Seeded the 9 real Axis Hotel tariff room types (Single/Double/Twin x Bed Only/B&B/Half Board).");
 
   // Fix the mislabeled tariff: it was seeded as "Triple" (capacity 3), but
   // it's really the Twin-bed tariff for rooms 27 & 28 (capacity 2).
@@ -268,21 +271,20 @@ async function main() {
   let realRoomCount = 0;
   for (const group of floors) {
     for (const num of group.numbers) {
-      const isTwin = num === "27" || num === "28";
+      const hasTwinBeds = num === "27" || num === "28";
       await prisma.room.upsert({
         where: { number: num },
-        update: { isTwin, floor: group.floor },
+        update: { floor: group.floor },
         create: {
           number: num,
           floor: group.floor,
-          isTwin,
-          roomTypeId: isTwin ? "tariff-triple-bo" : "tariff-single-bo",
+          roomTypeId: hasTwinBeds ? "tariff-triple-bo" : "tariff-single-bo",
         },
       });
       realRoomCount++;
     }
   }
-  console.log(`Seeded the real ${realRoomCount}-room list across floors 1-4 (rooms 27 & 28 flagged as Twin).`);
+  console.log(`Seeded the real ${realRoomCount}-room list across floors 1-4 (every room bookable as Single, Double or Twin).`);
 
   const methods = ["Cash", "M-Pesa", "Card", "Bank Transfer"];
   for (const name of methods) {

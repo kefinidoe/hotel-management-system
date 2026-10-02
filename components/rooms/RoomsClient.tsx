@@ -1,5 +1,7 @@
 "use client";
 
+import type { RoomStatus } from "@prisma/client";
+import { ROOM_STATUSES, roomStatusClasses } from "@/lib/room-status";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X, Settings2 } from "lucide-react";
@@ -23,37 +25,10 @@ type RoomType = {
   capacity: number;
 };
 
-const STATUS_OPTIONS = [
-  "AVAILABLE",
-  "RESERVED",
-  "OCCUPIED",
-  "DIRTY",
-  "CLEANING",
-  "READY",
-  "MAINTENANCE",
-  "OUT_OF_ORDER",
-];
+const STATUS_OPTIONS = ROOM_STATUSES;
 
 function statusClasses(status: string) {
-  switch (status) {
-    case "AVAILABLE":
-      return "bg-primary-50 text-primary-700";
-    case "READY":
-      return "bg-primary-50 text-primary-700";
-    case "OCCUPIED":
-      return "bg-champagne-50 text-champagne-500";
-    case "RESERVED":
-      return "bg-info/10 text-info";
-    case "CLEANING":
-      return "bg-info/10 text-info";
-    case "DIRTY":
-      return "bg-warning/10 text-warning";
-    case "MAINTENANCE":
-    case "OUT_OF_ORDER":
-      return "bg-danger/10 text-danger";
-    default:
-      return "bg-bg text-text-secondary";
-  }
+  return roomStatusClasses(status as RoomStatus);
 }
 
 export default function RoomsClient({

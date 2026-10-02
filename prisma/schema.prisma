@@ -80,6 +80,7 @@ model RoomType {
 enum MealPlan {
   BED_ONLY
   BED_AND_BREAKFAST
+  HALF_BOARD
 }
 
 model Room {
@@ -89,7 +90,6 @@ model Room {
   roomTypeId String
   roomType   RoomType   @relation(fields: [roomTypeId], references: [id])
   status     RoomStatus @default(AVAILABLE)
-  isTwin     Boolean    @default(false) // true only for rooms 27 & 28 -- fixed twin-bed rooms, no occupancy choice at check-in
   isActive   Boolean    @default(true) // inactive rooms stay in history but are hidden from hotel operations
   notes      String?
   createdAt  DateTime   @default(now())

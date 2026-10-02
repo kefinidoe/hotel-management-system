@@ -135,17 +135,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
           const targetRoom = await tx.room.findUnique({
             where: { id: roomId },
-            select: { id: true, number: true, isTwin: true, isActive: true },
+            select: { id: true, number: true, isActive: true },
           });
           if (!targetRoom) throw new ReservationUpdateError("Room not found.", 404);
           if (!targetRoom.isActive) {
             throw new ReservationUpdateError("That room is no longer part of the active hotel inventory.");
           }
-          if (targetRoom.isTwin !== reservation.rooms[0].room.isTwin) {
-            throw new ReservationUpdateError(
-              "A reservation cannot move between Twin and Single/Double rooms without creating a new correctly priced reservation."
-            );
-          }
+          // Any room can take any reservation now: the occupancy and meal plan
+          // chosen at booking set the price, not the room.
 
           const existing = await tx.reservationRoom.findMany({
             where: {

@@ -9,6 +9,15 @@ import FolioModal from "./FolioModal";
 import CheckInModal from "./CheckInModal";
 import ExtendStayModal from "./ExtendStayModal";
 import { hasRole, ROLE_GROUPS } from "@/lib/permissions";
+import type { RoomStatus } from "@prisma/client";
+import {
+  isBookableToday,
+  ROOM_STATUS_HINTS,
+  ROOM_STATUS_LABELS,
+  roomStatusClasses,
+  roomStatusDotClasses,
+  summariseRooms,
+} from "@/lib/room-status";
 
 type ResRow = {
   id: string;
@@ -16,6 +25,7 @@ type ResRow = {
   guestName: string;
   checkInDate: string;
   checkOutDate: string;
+  roomId: string;
   roomNumbers: string;
   openFolioId: string | null;
   requiredAmount: number;
@@ -23,7 +33,14 @@ type ResRow = {
   balance: number;
   nightlyRateTotal: number;
 };
-type Room = { id: string; number: string; roomTypeName: string; baseRate: number; isTwin: boolean };
+type Room = {
+  id: string;
+  number: string;
+  floor: string | null;
+  status: RoomStatus;
+  roomTypeName: string;
+  baseRate: number;
+};
 
 function money(value: number) {
   return `KSh ${value.toLocaleString(undefined, {
@@ -55,6 +72,13 @@ export default function FrontDeskClient({
   const [checkInReservation, setCheckInReservation] = useState<ResRow | null>(null);
   const [extendReservation, setExtendReservation] = useState<ResRow | null>(null);
   const [openFolio, setOpenFolio] = useState<{ folioId: string; reservationId: string } | null>(null);
+
+  const roomSummary = summariseRooms(rooms);
+  const roomsByFloor = rooms.reduce<Record<string, Room[]>>((groups, room) => {
+    const floor = room.floor ?? "Other";
+    (groups[floor] ??= []).push(room);
+    return groups;
+  }, {});
 
   function refresh() {
     router.refresh();
@@ -98,6 +122,60 @@ export default function FrontDeskClient({
           {error}
         </p>
       )}
+
+      <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm mb-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div>
+            <h2 className="text-base font-bold">Room Status</h2>
+            <p className="text-xs text-text-secondary mt-0.5">
+              {roomSummary.bookable} of {roomSummary.total} rooms free and clean right now
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={refresh}
+            className="text-xs font-medium rounded-control border border-border px-3 py-1.5 hover:bg-bg"
+          >
+            Refresh
+          </button>
+        </div>
+
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5 mb-4">
+          {Array.from(roomSummary.counts.entries()).map(([status, count]) => (
+            <span key={status} className="inline-flex items-center gap-1.5 text-xs text-text-secondary">
+              <span className={`h-2 w-2 rounded-full ${roomStatusDotClasses(status)}`} />
+              {ROOM_STATUS_LABELS[status]}: <span className="font-semibold">{count}</span>
+            </span>
+          ))}
+        </div>
+
+        <div className="space-y-3">
+          {Object.entries(roomsByFloor)
+            .sort(([left], [right]) => left.localeCompare(right, undefined, { numeric: true }))
+            .map(([floor, floorRooms]) => (
+              <div key={floor}>
+                <p className="text-xs font-medium uppercase tracking-wide text-text-muted mb-1.5">
+                  {floor === "Other" ? "Other rooms" : `Floor ${floor}`}
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                  {floorRooms.map((room) => (
+                    <div
+                      key={room.id}
+                      title={ROOM_STATUS_HINTS[room.status]}
+                      className={`rounded-control border px-2.5 py-1.5 ${roomStatusClasses(room.status)}`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className={`h-1.5 w-1.5 rounded-full ${roomStatusDotClasses(room.status)}`} />
+                        <span className="text-sm font-semibold text-text-primary">{room.number}</span>
+                      </div>
+                      <p className="text-[11px] font-medium mt-0.5">{ROOM_STATUS_LABELS[room.status]}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
@@ -320,6 +398,7 @@ export default function FrontDeskClient({
       {checkInReservation && (
         <CheckInModal
           reservation={checkInReservation}
+          rooms={rooms.map((room) => ({ id: room.id, number: room.number, status: room.status }))}
           onClose={() => setCheckInReservation(null)}
           onCheckedIn={(folioId) => {
             refresh();

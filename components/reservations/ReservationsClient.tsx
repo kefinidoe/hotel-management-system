@@ -6,9 +6,10 @@ import clsx from "clsx";
 import type { RoleName } from "@prisma/client";
 import { startOfWeek, addDays, isoDay } from "@/lib/dates";
 import { hasRole, ROLE_GROUPS } from "@/lib/permissions";
+import type { RoomStatus } from "@prisma/client";
 import CreateReservationModal from "./CreateReservationModal";
 
-type Room = { id: string; number: string; roomTypeName: string; baseRate: number; isTwin: boolean };
+type Room = { id: string; number: string; roomTypeName: string; baseRate: number; status: RoomStatus };
 type Reservation = {
   id: string;
   code: string;

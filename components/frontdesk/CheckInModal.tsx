@@ -1,8 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { RoomStatus } from "@prisma/client";
 import { X } from "lucide-react";
 import { roundMoney } from "@/lib/billing";
+import {
+  blocksGuestPlacement,
+  isBookableToday,
+  notBookableReason,
+  roomStatusClasses,
+  roomStatusDotClasses,
+  ROOM_STATUS_LABELS,
+} from "@/lib/room-status";
+
+export type SelectableRoom = {
+  id: string;
+  number: string;
+  status: RoomStatus;
+};
 
 type PaymentMethod = { id: string; name: string };
 
@@ -10,6 +25,7 @@ type CheckInReservation = {
   id: string;
   code: string;
   guestName: string;
+  roomId: string;
   roomNumbers: string;
   requiredAmount: number;
 };
@@ -23,13 +39,16 @@ function money(value: number) {
 
 export default function CheckInModal({
   reservation,
+  rooms,
   onClose,
   onCheckedIn,
 }: {
   reservation: CheckInReservation;
+  rooms: SelectableRoom[];
   onClose: () => void;
   onCheckedIn: (folioId: string) => void;
 }) {
+  const [newRoomId, setNewRoomId] = useState("");
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [methodId, setMethodId] = useState("");
   const [amountPaid, setAmountPaid] = useState(String(reservation.requiredAmount));
@@ -67,6 +86,21 @@ export default function CheckInModal({
     };
   }, []);
 
+  // The room the guest is actually given: the reserved one unless the
+  // receptionist moves them because it is not ready.
+  const reservedRoom = rooms.find((room) => room.id === reservation.roomId) ?? null;
+  const reservedRoomStatus = reservedRoom?.status ?? null;
+  // "Reserved" is not a problem here: it may be reserved for this very guest.
+  const reservedRoomReady = reservedRoomStatus ? !blocksGuestPlacement(reservedRoomStatus) : true;
+
+  const otherRooms = useMemo(
+    () =>
+      rooms
+        .filter((room) => room.id !== reservation.roomId && isBookableToday(room.status))
+        .sort((left, right) => left.number.localeCompare(right.number, undefined, { numeric: true })),
+    [rooms, reservation.roomId]
+  );
+
   const numericPaid = Number(amountPaid);
   const previewPaid = Number.isFinite(numericPaid) && numericPaid >= 0 ? numericPaid : 0;
   const balance = roundMoney(Math.max(0, reservation.requiredAmount - previewPaid));
@@ -96,6 +130,7 @@ export default function CheckInModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           reservationId: reservation.id,
+          newRoomId: newRoomId || null,
           amountPaid: numericPaid,
           paymentMethodId: numericPaid > 0 ? methodId : null,
           reference,
@@ -134,6 +169,62 @@ export default function CheckInModal({
         </div>
 
         <form onSubmit={submit} className="space-y-4">
+          {reservedRoom && (
+            <div className="rounded-control border border-border px-3 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm text-text-secondary">Reserved room</span>
+                <span className="flex items-center gap-2">
+                  <span className="text-sm font-semibold">Room {reservedRoom.number}</span>
+                  {reservedRoomStatus && (
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${roomStatusClasses(reservedRoomStatus)}`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${roomStatusDotClasses(reservedRoomStatus)}`} />
+                      {ROOM_STATUS_LABELS[reservedRoomStatus]}
+                    </span>
+                  )}
+                </span>
+              </div>
+
+              {!reservedRoomReady && reservedRoomStatus && (
+                <p className="mt-2 text-xs text-warning bg-warning/10 border border-warning/20 rounded-control px-2.5 py-2">
+                  {notBookableReason(reservedRoomStatus)} Give the guest another room below, or ask
+                  housekeeping to finish Room {reservedRoom.number} first.
+                </p>
+              )}
+
+              {otherRooms.length > 0 && (
+                <div className="mt-3">
+                  <label className="block text-sm font-medium mb-1.5">
+                    Change room (optional)
+                  </label>
+                  <select
+                    value={newRoomId}
+                    onChange={(event) => setNewRoomId(event.target.value)}
+                    className="w-full rounded-control border border-border px-3 py-2 text-sm"
+                  >
+                    <option value="">Keep Room {reservedRoom.number}</option>
+                    {otherRooms.map((room) => (
+                      <option key={room.id} value={room.id}>
+                        Room {room.number} — {ROOM_STATUS_LABELS[room.status]}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-text-muted mt-1">
+                    Only rooms that are free and clean are listed. The nightly rate stays the same.
+                  </p>
+                </div>
+              )}
+
+              {otherRooms.length === 0 && !reservedRoomReady && (
+                <p className="mt-2 text-xs text-danger">
+                  No other room is free and clean right now. Ask housekeeping to finish Room{" "}
+                  {reservedRoom.number}, then check in.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="rounded-control border border-border bg-bg px-3 py-3 text-sm space-y-2">
             <div className="flex justify-between">
               <span className="text-text-secondary">Amount required</span>
@@ -213,7 +304,11 @@ export default function CheckInModal({
             </button>
             <button
               type="submit"
-              disabled={submitting || (paymentRequired && (loadingMethods || !methodId))}
+              disabled={
+                submitting ||
+                (paymentRequired && (loadingMethods || !methodId)) ||
+                (!reservedRoomReady && !newRoomId)
+              }
               className="btn-primary"
             >
               {submitting ? "Checking in..." : "Confirm Check-in"}
