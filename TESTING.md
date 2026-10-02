@@ -2,9 +2,10 @@
 
 > ## ⚠️ Read this first — most of what this document claims is not true
 >
-> `npm run test:run` currently reports **129 passing tests**, but only **10** of them
-> execute any real application code — `seed/seed.test.ts` (6) and
-> `middleware/matcher.test.ts` (4). See "The suites that test real code" below.
+> `npm run test:run` currently reports **133 passing tests**, but only **14** of them
+> execute any real application code — `seed/seed.test.ts` (6),
+> `schema/migrations.test.ts` (4) and `middleware/matcher.test.ts` (4). See "The suites that
+> test real code" below.
 >
 > The other **119** tests — `workflows/guest-lifecycle.test.ts`, `api/endpoints.test.ts`
 > and `utilities/helpers.test.ts` — import **nothing** from `app/`, `lib/` or `components/`.
@@ -24,7 +25,7 @@
 > what the real suite should eventually cover.
 
 ## Overview
-Testing suite for the Hotel Management System: **129 tests**, of which 10 exercise real code
+Testing suite for the Hotel Management System: **133 tests**, of which 14 exercise real code
 and 119 are placeholder assertions awaiting replacement.
 
 ## Test Framework
@@ -39,6 +40,8 @@ and 119 are placeholder assertions awaiting replacement.
 __tests__/
 ├── seed/
 │   └── seed.test.ts                   # REAL: runs prisma/seed.ts (6 tests)
+├── schema/
+│   └── migrations.test.ts             # REAL: migrations vs Postgres vs schema.prisma (4 tests)
 ├── middleware/
 │   └── matcher.test.ts                # REAL: verifies middleware.ts matcher (4 tests)
 ├── workflows/
@@ -184,13 +187,14 @@ npm run test:coverage
 ## Test Results Summary
 
 ```
-Test Files  5 passed (5)
-     Tests  129 passed (129)
+Test Files  6 passed (6)
+     Tests  133 passed (133)
   Duration  ~4.5s (environment ~70%, setup ~18%, transform ~10%)
 ```
 
 ### Breakdown by Module
 - Seed script (real code, `prisma/seed.ts`): 6/6 ✅
+- Migrations vs real PostgreSQL + `schema.prisma` (real): 4/4 ✅
 - Middleware matcher (real code, `middleware.ts`): 4/4 ✅
 - Guest Lifecycle: 36/36 ⚠️ placeholder assertions
 - API Endpoints: 46/46 ⚠️ placeholder assertions
@@ -210,6 +214,17 @@ and it fails with exactly the error that made `npm run seed` unusable on a fresh
 ```bash
 git show 1fb45bf:prisma/seed.ts   # -> P2025 on roomType "tariff-triple-bo", process.exit(1)
 ```
+
+`__tests__/schema/migrations.test.ts` runs all five `migration.sql` files against
+**PostgreSQL 18 compiled to WebAssembly** (`@electric-sql/pglite`, a devDependency — it needs
+no server and no network, so it works in CI). It then introspects the result and compares it
+to `prisma/schema.prisma`: 25 tables, 13 enums, 193 scalar/enum columns, all matching. It also
+asserts the six foreign keys the app's joins depend on actually exist, and that every
+enum-like literal in `app/**` and `prisma/seed.ts` is a member of a real enum — so a typo like
+`status: "NEEDS_CLEANNG"` fails here instead of at runtime.
+
+Caveat: PGlite is PostgreSQL 18 and Supabase may run 15 or 16. All the syntax used is
+long-stable, but this is not a substitute for `prisma migrate deploy` against the real project.
 
 `__tests__/middleware/matcher.test.ts` reads the real `config.matcher` out of `middleware.ts`
 and pushes all 37 API routes, 9 NextAuth endpoints and the public pages through Next's own

@@ -386,6 +386,31 @@ and by `app/api/purchases/route.ts`. `STEP6-README.md` similarly points at
 - **Reports**: `/api/reports` groups `FolioItem` by type and `Payment` by method, but there's
   no occupancy/ADR/RevPAR report, no per-day series, and no export.
 
+### 6.9 Migrations verified against real PostgreSQL — **NO DRIFT FOUND**
+
+Not a bug: the first time these migrations have ever been executed. All 5 files apply
+cleanly to an empty database, and the result matches `prisma/schema.prisma` exactly:
+
+| | schema.prisma | migrated database |
+|---|---|---|
+| Models / tables | 25 | 25 |
+| Enums | 13 | 13 |
+| Scalar + enum columns | 193 | 193 |
+| Foreign keys | — | 30 |
+
+Enum values match member-for-member, table-for-table, column-for-column. There is no drift
+and no missing migration.
+
+Also checked: every enum literal in `app/**/*.ts{,x}` and `prisma/seed.ts` (34 of them —
+`"NEEDS_CLEANING"`, `"CHECKED_IN"`, `"MEAL_SALE"`, `"BED_AND_BREAKFAST"`, …) is a real member
+of a real enum type. The only three that aren't are `CRITICAL`, `LOW_STOCK` and
+`OUT_OF_STOCK`, which come from the `StockStatus` TypeScript union in `lib/inventory.ts` and
+are correctly not database enums.
+
+All of this is guarded by `__tests__/schema/migrations.test.ts`, which was verified to fail
+on three injected faults: a broken migration, a field added to `schema.prisma` with no
+migration, and a typo'd enum literal in `app/api/check-out/route.ts`.
+
 ---
 
 ## 7. What I could and couldn't run in this sandbox
@@ -394,13 +419,30 @@ and by `app/api/purchases/route.ts`. `STEP6-README.md` similarly points at
 |---|---|
 | `npm install` | ❌ `ERESOLVE` (vite 8 vs `@types/node` 20.14.11) |
 | `npm install --legacy-peer-deps` | ✅ 552 packages |
-| `npm run test:run` | ✅ 125 passed / 4 files (119 placeholders + 6 real — see §6.3) |
+| `npm run test:run` | ✅ 133 passed / 6 files (119 placeholders + 14 real — see §6.3) |
 | `npx tsc --noEmit` | ❌ ~30 errors, all from the un-generated Prisma client |
 | `npx tsc --noEmit middleware.ts` (isolated) | ✅ clean |
-| `npx prisma generate` | ❌ `binaries.prisma.sh` is unreachable from this sandbox (TLS blocked); `--no-engine` and the wasm engine don't bypass it |
-| `npx prisma validate` / `migrate` | ❌ same engine download |
-| `npm run dev` | ❌ needs the generated client + a live `DATABASE_URL` |
 | `npx next lint` | ✅ clean (was: blocked on the interactive ESLint setup prompt) |
+| TCP to `aws-1-eu-west-1.pooler.supabase.com:6543` and `:5432` | ✅ connect |
+| TLS/`pg` handshake to that host | ❌ `ECONNRESET` / "Connection terminated unexpectedly" — a transparent proxy accepts the TCP connection, then resets. `https://supabase.com` returns `000` |
+| `npx prisma generate` | ❌ `binaries.prisma.sh` unreachable; `--no-engine` and the wasm engine don't bypass it |
+| `npx prisma validate` / `migrate` | ❌ same engine download |
+| `npm run dev` | ❌ needs the generated client (and, for anything past `/login`, a reachable database) |
+
+### What I *can* do without the Prisma engine: a real database, in-process
+
+`@electric-sql/pglite` is **PostgreSQL compiled to WebAssembly** and installed from npm — so
+it runs here, and in CI, with no server and no network. That is enough to actually execute
+the migration SQL and inspect the result, which is how §6.9 was verified.
+
+It is now a **devDependency** (`@electric-sql/pglite@0.5.8`, ~5 MB) used only by
+`__tests__/schema/migrations.test.ts`. Remove it if you'd rather not carry it — just delete
+that one test file and the dependency.
+
+Caveat: PGlite is PostgreSQL **18**; Supabase may be running 15 or 16. Everything these
+migrations use is long-stable syntax, but a feature introduced in 17/18 could pass here and
+fail there. It is not a substitute for running `prisma migrate deploy` against the real
+project once.
 
 **So: the app itself has not been executed here.** Everything in §2–§6 comes from reading
 the source, plus the greps and commands shown.
@@ -414,9 +456,9 @@ the source, plus the greps and commands shown.
 2. ✅ `prisma/seed.ts` ordering fixed so a fresh clone can seed (§6.1).
 3. ✅ Auth added to the 6 open endpoints + a blanket `/api/*` middleware guard (§6.2).
 4. ✅ `.eslintrc.json` added; `npm run lint` is clean (§6.5).
+   ✅ `SETUP.md` written — Supabase + `.env` + `migrate` + `seed` + the checks to run locally.
    ⬜ `tsc --noEmit` still needs `prisma generate`, which needs network access to
-   `binaries.prisma.sh` — it should be run on your machine.
-   ⬜ A `SETUP.md` walking through Supabase + `.env` is still worth writing.
+   `binaries.prisma.sh`. Run it on your machine: `npm run prisma:generate && npx tsc --noEmit`.
 
 **Tier 2 — trust**
 5. Replace the fake tests with real ones: unit-test `lib/dates.ts`, `lib/restaurant.ts`,
