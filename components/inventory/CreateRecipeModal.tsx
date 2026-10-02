@@ -136,6 +136,7 @@ export default function CreateRecipeModal({
                     <input
                       type="number"
                       step="0.01"
+                      min="0.01"
                       value={row.quantity}
                       onChange={(e) => updateRow(idx, { quantity: e.target.value })}
                       placeholder={inv ? inv.unit : "qty"}

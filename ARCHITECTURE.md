@@ -601,12 +601,56 @@ The consolidation in §6.10 is **done** — `main`, this branch and `fix/stabili
 tree again, so the work below can proceed on a single base.
 
 **Tier 2 — trust**
-5. Replace the fake tests with real ones: unit-test `lib/dates.ts` ✅ (8 tests), then
-   `lib/restaurant.ts`, `lib/inventory.ts` (pure functions, trivial to test), then route-handler
-   tests with a mocked Prisma client, then a real integration suite against a throwaway Postgres.
-6. Add `zod` schemas at the route boundaries (it's already installed).
-7. Make reservation codes collision-proof.
-8. Extract one `computeFolioTotals()` helper and use it in all three places.
+
+> **Correction (2026-10-02, after the merge).** This section used to list items 7 and 8 as
+> open risks. They are **already handled** — `fix/stabilization` was better than the earlier
+> survey of it suggested, and re-reading the merged code showed both were fixed there. The
+> details are recorded below rather than deleting the items, because "why is this safe?"
+> is the question worth being able to answer later.
+
+5. Replace the fake tests with real ones.
+   - ✅ `lib/dates.ts` (8), `lib/report-export.ts` (8)
+   - ✅ `lib/restaurant.ts` (23) — written as attacks on the cart trust boundary, plus cart
+     arithmetic. Found and fixed the `round2` divergence below.
+   - ✅ `lib/inventory.ts` (21) — availability engine, stock status, unit formatting. Found the
+     negative-quantity gap below.
+   - ⬜ Route-handler tests with a mocked Prisma client, then a real integration suite against a
+     throwaway Postgres. **This is the highest-value item left.**
+
+   **Two findings from writing those tests:**
+   - `round2` in `lib/restaurant.ts` and `roundMoney` in `lib/billing.ts` were two different
+     implementations of money rounding. They disagreed at exact half-cent boundaries (1.005 →
+     1.00 vs 1.01) while both writing `FolioItem.total`. `round2` is now an alias of
+     `roundMoney`, so there is one rounding rule.
+   - `POST /api/recipes` accepted non-positive ingredient quantities and non-integer portion
+     counts — `RecipeIngredient.quantity` is `Decimal(10,2)` with no CHECK constraint. A single
+     negative line made `computeAvailablePortions()` report the dish as completely unavailable
+     and name the broken ingredient to staff as the reason. The `<= 0` guard in
+     `lib/inventory.ts` was containing this at read time; the route now rejects it at write
+     time, and the quantity input gained the `min` it was missing.
+6. Add `zod` schemas at the route boundaries (it's installed and unused). Lower value than it
+   looks: the money and cart inputs are already validated by hand (`parseMoney`,
+   `accommodationRequired`, `resolveCartLines`), so this is mostly about consistency and
+   less bespoke code — not about closing a hole.
+7. ~~Make reservation codes collision-proof.~~ **Already safe.** `nextReservationCode()` picks
+   `max(existing) + 1` inside a transaction, which is a genuine read-then-write race — but
+   `Reservation.code` carries `@unique` in the schema, and `app/api/reservations/route.ts`
+   catches both `P2002` and `P2034` and returns a 409 *"Another reservation was saved at the
+   same time. Please try again."* So a collision is impossible in the data and the losing
+   request gets an honest error instead of a corrupt row. It does not auto-retry, which is the
+   only remaining nit.
+8. ~~Extract one `computeFolioTotals()` helper.~~ **Already done** — it is `folioTotals()` in
+   `lib/billing.ts`, used by all four money routes (`check-out`, `folios/[id]`, `payments`,
+   `guests/[id]`). All four filter `status: "COMPLETED"` before summing, so no route counts a
+   pending payment as paid. Rounding is centralised in `roundMoney()`, and check-in's
+   `accommodationRequired()` matches the folio items it writes (the `DISCOUNT` item is stored
+   as a **negative** total, which is what makes the sum agree).
+   The one thing to know: `app/api/reports/route.ts` does its **own** aggregation over folio
+   items rather than calling `folioTotals()`. It is mathematically equivalent today (same item
+   set, same `COMPLETED` filter), and it legitimately can't call the helper directly because it
+   sums across a reservation's folios grouped by type. But it is a second implementation, so a
+   future change to `folioTotals()` will not propagate there. Worth a comment or a shared
+   reducer at some point — a maintainability nit, not a bug.
 
 **Tier 3 — finish the half-built things**
 9. Wire up `AuditLog` writes (the schema and the `before`/`after`/`reason` columns are

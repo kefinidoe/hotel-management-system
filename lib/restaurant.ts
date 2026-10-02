@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { roundMoney } from "@/lib/billing";
 
 export type CartLine = {
   menuItemId: string;
@@ -16,9 +17,19 @@ type TxClient = Prisma.TransactionClient;
 
 const MAX_LINE_QUANTITY = 1000;
 
-export function round2(value: number): number {
-  return Math.round(value * 100) / 100;
-}
+/**
+ * Money rounding.
+ *
+ * This delegates to `roundMoney` in lib/billing.ts so the whole codebase rounds
+ * money one way. It used to be a second, subtly different implementation
+ * (`Math.round(value * 100) / 100`), which disagreed with `roundMoney` at exact
+ * half-cent boundaries -- e.g. 1.005 came out as 1.00 here and 1.01 there.
+ * Both write to the same `FolioItem.total` column, so a restaurant line and an
+ * accommodation line on the same folio must not be rounded by different rules.
+ *
+ * Kept as a named export because the POS routes import it by this name.
+ */
+export const round2 = roundMoney;
 
 // The browser is allowed to choose item IDs and quantities only. Item names
 // and prices are deliberately ignored because client data can be modified.

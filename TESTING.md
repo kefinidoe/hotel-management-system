@@ -2,7 +2,7 @@
 
 > ## ⚠️ Read this first — most of what this document claims is not true
 >
-> `npm run test:run` currently reports **199 passing tests**. **80** of them execute real
+> `npm run test:run` currently reports **251 passing tests**. **132** of them execute real
 > application code; the other **119** still import nothing from `app/`, `lib/` or `components/`.
 > Verify it yourself:
 >
@@ -20,10 +20,10 @@
 > specification of what the real suite should eventually cover.
 
 ## Overview
-Testing suite for the Hotel Management System: **199 tests**, of which **80** exercise real
+Testing suite for the Hotel Management System: **251 tests**, of which **132** exercise real
 code and **119** are placeholder assertions awaiting replacement.
 
-The 80 that test real code, by suite:
+The 132 that test real code, by suite:
 
 | Suite | Tests | What it pins down |
 |---|---|---|
@@ -35,6 +35,9 @@ The 80 that test real code, by suite:
 | `auth/session-revocation.test.ts` | 7 | session invalidation |
 | `utilities/dates.test.ts` | 8 | timezone-pinned date display, including the midnight boundary |
 | `middleware/matcher.test.ts` | 4 | `middleware.ts` protects both `/dashboard/*` and `/api/*` |
+| `restaurant/cart.test.ts` | 23 | the POS cart trust boundary (a forged price must not survive) and cart arithmetic |
+| `inventory/stock.test.ts` | 21 | recipe availability, stock status, unit formatting |
+| `reports/excel-export.test.ts` | 8 | the Excel workbook is well-formed and columns line up |
 
 Each of these was mutation-tested: reintroducing the bug it guards makes it fail.
 
@@ -58,6 +61,12 @@ __tests__/
 ├── rooms/
 │   ├── room-status.test.ts            # REAL: floor-board rules (13 tests)
 │   └── tariffs.test.ts                # REAL: tariff matching (12 tests)
+├── restaurant/
+│   └── cart.test.ts                   # REAL: POS cart boundary + arithmetic (23 tests)
+├── inventory/
+│   └── stock.test.ts                  # REAL: availability + stock status (21 tests)
+├── reports/
+│   └── excel-export.test.ts           # REAL: workbook structure (8 tests)
 ├── auth/
 │   └── session-revocation.test.ts     # REAL: session invalidation (7 tests)
 ├── workflows/
