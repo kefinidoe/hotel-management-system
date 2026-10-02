@@ -1,5 +1,7 @@
 "use client";
 
+import type { RoomStatus } from "@prisma/client";
+import { ROOM_STATUSES, roomStatusClasses } from "@/lib/room-status";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X, Settings2 } from "lucide-react";
@@ -23,45 +25,20 @@ type RoomType = {
   capacity: number;
 };
 
-const STATUS_OPTIONS = [
-  "AVAILABLE",
-  "RESERVED",
-  "OCCUPIED",
-  "DIRTY",
-  "CLEANING",
-  "READY",
-  "MAINTENANCE",
-  "OUT_OF_ORDER",
-];
+const STATUS_OPTIONS = ROOM_STATUSES;
 
 function statusClasses(status: string) {
-  switch (status) {
-    case "AVAILABLE":
-      return "bg-primary-50 text-primary-700";
-    case "READY":
-      return "bg-primary-50 text-primary-700";
-    case "OCCUPIED":
-      return "bg-champagne-50 text-champagne-500";
-    case "RESERVED":
-      return "bg-info/10 text-info";
-    case "CLEANING":
-      return "bg-info/10 text-info";
-    case "DIRTY":
-      return "bg-warning/10 text-warning";
-    case "MAINTENANCE":
-    case "OUT_OF_ORDER":
-      return "bg-danger/10 text-danger";
-    default:
-      return "bg-bg text-text-secondary";
-  }
+  return roomStatusClasses(status as RoomStatus);
 }
 
 export default function RoomsClient({
   initialRooms,
   initialRoomTypes,
+  canManage,
 }: {
   initialRooms: Room[];
   initialRoomTypes: RoomType[];
+  canManage: boolean;
 }) {
   const router = useRouter();
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
@@ -82,14 +59,16 @@ export default function RoomsClient({
             {initialRooms.length} rooms across {initialRoomTypes.length} room types.
           </p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => setManageTypesOpen(true)} className="btn-secondary">
-            <Settings2 size={16} /> Room Types
-          </button>
-          <button onClick={() => setAddRoomOpen(true)} className="btn-primary">
-            <Plus size={16} /> Add Room
-          </button>
-        </div>
+        {canManage && (
+          <div className="flex gap-2">
+            <button onClick={() => setManageTypesOpen(true)} className="btn-secondary">
+              <Settings2 size={16} /> Room Types
+            </button>
+            <button onClick={() => setAddRoomOpen(true)} className="btn-primary">
+              <Plus size={16} /> Add Room
+            </button>
+          </div>
+        )}
       </div>
 
       {error && (
@@ -185,13 +164,14 @@ export default function RoomsClient({
         <RoomDetailModal
           room={selectedRoom}
           roomTypes={initialRoomTypes}
+          canManage={canManage}
           onClose={() => setSelectedRoom(null)}
           onSaved={refresh}
           onError={setError}
         />
       )}
 
-      {addRoomOpen && (
+      {canManage && addRoomOpen && (
         <AddRoomModal
           roomTypes={initialRoomTypes}
           onClose={() => setAddRoomOpen(false)}
@@ -200,7 +180,7 @@ export default function RoomsClient({
         />
       )}
 
-      {manageTypesOpen && (
+      {canManage && manageTypesOpen && (
         <RoomTypesModal
           roomTypes={initialRoomTypes}
           onClose={() => setManageTypesOpen(false)}
@@ -307,12 +287,14 @@ function AddRoomModal({
 function RoomDetailModal({
   room,
   roomTypes,
+  canManage,
   onClose,
   onSaved,
   onError,
 }: {
   room: Room;
   roomTypes: RoomType[];
+  canManage: boolean;
   onClose: () => void;
   onSaved: () => void;
   onError: (e: string | null) => void;
@@ -341,13 +323,20 @@ function RoomDetailModal({
   }
 
   async function remove() {
-    if (!confirm(`Delete room ${room.number}?`)) return;
+    if (
+      !confirm(
+        `Remove room ${room.number} from the hotel? It will disappear from active rooms and future bookings, while existing history will be kept.`
+      )
+    ) {
+      return;
+    }
     setLoading(true);
+    onError(null);
     const res = await fetch(`/api/rooms/${room.id}`, { method: "DELETE" });
     setLoading(false);
     if (!res.ok) {
       const data = await res.json();
-      onError(data.error || "Could not delete room.");
+      onError(data.error || "Could not remove room from the hotel.");
       return;
     }
     onSaved();
@@ -359,7 +348,12 @@ function RoomDetailModal({
       <div className="space-y-3">
         <div>
           <label className="block text-sm font-medium mb-1.5">Room Type</label>
-          <select value={roomTypeId} onChange={(e) => setRoomTypeId(e.target.value)} className={inputClass()}>
+          <select
+            value={roomTypeId}
+            onChange={(e) => setRoomTypeId(e.target.value)}
+            disabled={!canManage}
+            className={inputClass()}
+          >
             {roomTypes.map((rt) => (
               <option key={rt.id} value={rt.id}>
                 {rt.name}
@@ -369,7 +363,12 @@ function RoomDetailModal({
         </div>
         <div>
           <label className="block text-sm font-medium mb-1.5">Status</label>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className={inputClass()}>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            disabled={!canManage}
+            className={inputClass()}
+          >
             {STATUS_OPTIONS.map((s) => (
               <option key={s} value={s}>
                 {s.replace("_", " ")}
@@ -379,16 +378,28 @@ function RoomDetailModal({
         </div>
         <div>
           <label className="block text-sm font-medium mb-1.5">Notes</label>
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className={inputClass()} />
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            readOnly={!canManage}
+            rows={3}
+            className={inputClass()}
+          />
         </div>
-        <div className="flex gap-2 pt-2">
-          <button onClick={save} disabled={loading} className="btn-primary flex-1">
-            {loading ? "Saving..." : "Save Changes"}
+        {canManage ? (
+          <div className="flex gap-2 pt-2">
+            <button onClick={save} disabled={loading} className="btn-primary flex-1">
+              {loading ? "Saving..." : "Save Changes"}
+            </button>
+            <button onClick={remove} disabled={loading} className="btn-secondary text-danger">
+              Remove from hotel
+            </button>
+          </div>
+        ) : (
+          <button onClick={onClose} className="btn-secondary w-full mt-2">
+            Close
           </button>
-          <button onClick={remove} disabled={loading} className="btn-secondary text-danger">
-            Delete
-          </button>
-        </div>
+        )}
       </div>
     </ModalShell>
   );

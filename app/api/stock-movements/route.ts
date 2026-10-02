@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/authz";
+import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
 
 export async function GET(req: Request) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+
+  const forbidden = requireRole(auth, ROLE_GROUPS.MANAGEMENT);
+  if (forbidden) return forbidden;
 
   const { searchParams } = new URL(req.url);
   const itemId = searchParams.get("itemId");

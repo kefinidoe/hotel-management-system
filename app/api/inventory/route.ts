@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAuth, requireRole } from "@/lib/authz";
+import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
 import { getStockStatus } from "@/lib/inventory";
 
 export async function GET(req: Request) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+
+  const forbidden = requireRole(auth, ROLE_GROUPS.MANAGEMENT);
+  if (forbidden) return forbidden;
 
   const { searchParams } = new URL(req.url);
   const includeInactive = searchParams.get("includeInactive") === "true";
@@ -42,7 +45,7 @@ export async function POST(req: Request) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
-  const forbidden = requireRole(auth, ["ADMIN", "MANAGER"]);
+  const forbidden = requireRole(auth, ROLE_GROUPS.MANAGEMENT);
   if (forbidden) return forbidden;
 
   const body = await req.json();

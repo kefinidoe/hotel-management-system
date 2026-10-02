@@ -1,40 +1,218 @@
 import { PrismaClient, RoleName } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { generatePassword } from "../lib/password";
+import {
+  cleanupMode,
+  DESTRUCTIVE_CLEANUP_ENV,
+  formatImpact,
+  hasRealActivity,
+  isDestructiveCleanupAllowed,
+  type CleanupImpact,
+} from "../lib/seed-guard";
 
 const prisma = new PrismaClient();
 
-async function main() {
-  const passwordHash = await bcrypt.hash("Admin123!", 10);
-
-  const admin = await prisma.user.upsert({
-    where: { email: "admin@hotel.com" },
-    update: {},
-    create: {
-      name: "Hotel Admin",
-      email: "admin@hotel.com",
-      passwordHash,
-      role: RoleName.ADMIN,
-      department: "Management",
+/**
+ * Counts everything that would be lost if the placeholder rooms were removed.
+ * Read-only: this is what lets the seed decide instead of guessing.
+ */
+async function measurePlaceholderImpact(
+  roomCount: number,
+  roomIds: string[]
+): Promise<CleanupImpact> {
+  const links = await prisma.reservationRoom.findMany({
+    where: { roomId: { in: roomIds } },
+    select: {
+      reservationId: true,
+      reservation: { select: { folios: { select: { id: true } } } },
     },
   });
 
-  console.log("Seeded admin login:");
-  console.log("  email:    admin@hotel.com");
-  console.log("  password: Admin123!");
+  const reservationIds = [...new Set(links.map((l) => l.reservationId))];
+  const folioIds = [...new Set(links.flatMap((l) => l.reservation.folios.map((f) => f.id)))];
+
+  const [payments, orders, folioItems, housekeepingTasks, maintenanceTickets, paid] =
+    await Promise.all([
+      prisma.payment.count({ where: { folioId: { in: folioIds } } }),
+      prisma.order.count({ where: { folioId: { in: folioIds } } }),
+      prisma.folioItem.count({ where: { folioId: { in: folioIds } } }),
+      prisma.housekeepingTask.count({ where: { roomId: { in: roomIds } } }),
+      prisma.maintenanceTicket.count({ where: { roomId: { in: roomIds } } }),
+      prisma.payment.aggregate({ where: { folioId: { in: folioIds } }, _sum: { amount: true } }),
+    ]);
+
+  return {
+    rooms: roomCount,
+    reservations: reservationIds.length,
+    folios: folioIds.length,
+    payments,
+    orders,
+    folioItems,
+    housekeepingTasks,
+    maintenanceTickets,
+    paidTotal: Number(paid._sum.amount ?? 0),
+  };
+}
+
+/** The destructive half, only ever reached once the guard above has allowed it. */
+async function deletePlaceholderData(roomIds: string[], impact: CleanupImpact) {
+  const links = await prisma.reservationRoom.findMany({
+    where: { roomId: { in: roomIds } },
+    select: { reservationId: true, reservation: { select: { folios: { select: { id: true } } } } },
+  });
+  const reservationIds = [...new Set(links.map((l) => l.reservationId))];
+  const folioIds = [...new Set(links.flatMap((l) => l.reservation.folios.map((f) => f.id)))];
+
+  if (folioIds.length > 0) {
+    await prisma.payment.deleteMany({ where: { folioId: { in: folioIds } } });
+    await prisma.folioItem.deleteMany({ where: { folioId: { in: folioIds } } });
+    await prisma.order.deleteMany({ where: { folioId: { in: folioIds } } });
+    await prisma.folio.deleteMany({ where: { id: { in: folioIds } } });
+  }
+
+  await prisma.reservationRoom.deleteMany({ where: { roomId: { in: roomIds } } });
+  if (reservationIds.length > 0) {
+    await prisma.reservation.deleteMany({ where: { id: { in: reservationIds } } });
+  }
+  await prisma.housekeepingTask.deleteMany({ where: { roomId: { in: roomIds } } });
+  await prisma.maintenanceTicket.deleteMany({ where: { roomId: { in: roomIds } } });
+  await prisma.room.deleteMany({ where: { id: { in: roomIds } } });
+
+  if (hasRealActivity(impact)) {
+    console.log(
+      `Deleted ${impact.payments} payment(s) worth ${impact.paidTotal.toLocaleString("en-KE")}, ` +
+        `${impact.folios} folio(s), ${impact.reservations} reservation(s).`
+    );
+  }
+}
+
+async function main() {
+  const adminEmail = process.env.SEED_ADMIN_EMAIL || "admin@hotel.com";
+
+  // There is deliberately NO fixed fallback password here.
+  //
+  // This repository is public, so any hard-coded default is a *published*
+  // credential: anyone who reads the repo could sign in as ADMIN on any
+  // deployment that still had it. Instead we use SEED_ADMIN_PASSWORD when it's
+  // provided, and otherwise generate a strong random password and print it once,
+  // below. If the admin already exists, its password is never touched --
+  // re-running the seed must not silently reset a working login.
+  const existingAdmin = await prisma.user.findUnique({ where: { email: adminEmail } });
+
+  let admin = existingAdmin;
+  let newPassword: string | null = null;
+
+  if (!existingAdmin) {
+    newPassword = process.env.SEED_ADMIN_PASSWORD || generatePassword();
+    admin = await prisma.user.create({
+      data: {
+        name: "Hotel Admin",
+        email: adminEmail,
+        passwordHash: await bcrypt.hash(newPassword, 10),
+        role: RoleName.ADMIN,
+        department: "Management",
+      },
+    });
+
+    console.log("");
+    console.log("  ┌─ Seeded admin login ─────────────────────────────────────────");
+    console.log(`  │  email:    ${adminEmail}`);
+    console.log(`  │  password: ${newPassword}`);
+    console.log("  │");
+    console.log("  │  Shown once. Save it now, then change it after your first");
+    console.log("  │  sign-in (key icon next to your name in the top bar).");
+    if (!process.env.SEED_ADMIN_PASSWORD) {
+      console.log("  │  Generated randomly -- set SEED_ADMIN_PASSWORD to choose one.");
+    }
+    console.log("  └──────────────────────────────────────────────────────────────");
+    console.log("");
+  } else {
+    console.log(`Admin ${adminEmail} already exists -- password left unchanged.`);
+    console.log(`  To set a new one:  npm run reset-password -- ${adminEmail}`);
+  }
+
+
+  // One-time real-room-list migration: rooms 101/102 were placeholder test
+  // rooms with made-up tariffs. Clear anything attached to them, then
+  // replace with Axis Hotel Nakuru's real 26 rooms across floors 1-4.
+  // Rooms 27 and 28 are the ones with twin beds, so their default tariff label
+  // is the Twin one. That is only a label: occupancy is chosen per booking for
+  // every room, and no room is restricted to one occupancy.
+  // Find every room still on the old placeholder tariffs, whatever it's
+  // named -- not just 101/102 -- in case anything else got created
+  // through the UI while those were still the only types available.
+  const oldRooms = await prisma.room.findMany({
+    where: { roomTypeId: { in: ["seed-single", "seed-double"] } },
+    orderBy: { number: "asc" },
+  });
+  const oldRoomIds = oldRooms.map((r) => r.id);
+
+  if (oldRoomIds.length === 0) {
+    // Nothing on the placeholder tariffs, so the tariff rows are unreferenced too.
+    await prisma.roomType.deleteMany({ where: { id: { in: ["seed-single", "seed-double"] } } });
+  } else {
+    // DECISION POINT. This is the only destructive step in the seed, so it does
+    // not run just because the seed was run. It looks at what is attached to
+    // those rooms: an empty placeholder is removed, but anything a guest
+    // touched -- a reservation, a folio, an order, a payment -- means the seed
+    // refuses and reports instead of deleting. See lib/seed-guard.ts.
+    const impact = await measurePlaceholderImpact(oldRooms.length, oldRoomIds);
+    const mode = cleanupMode(
+      impact,
+      isDestructiveCleanupAllowed(process.env[DESTRUCTIVE_CLEANUP_ENV])
+    );
+
+    if (mode === "blocked") {
+      console.log("");
+      console.log("  ┌─ Placeholder-room cleanup SKIPPED ────────────────────────────");
+      console.log("  │  These rooms still carry real activity, so nothing was deleted.");
+      for (const line of formatImpact(impact, oldRooms.map((r) => r.number))) {
+        console.log(`  │${line}`);
+      }
+      console.log("  │");
+      console.log("  │  The rooms and their tariff types are being LEFT IN PLACE.");
+      console.log("  │  Nothing else in the seed depends on this step.");
+      console.log("  │");
+      console.log("  │  If that activity is test data you want gone, re-run with:");
+      console.log("  │    PowerShell:  $env:SEED_ALLOW_DESTRUCTIVE_CLEANUP=\"true\"; npm run seed");
+      console.log("  │    cmd:         set SEED_ALLOW_DESTRUCTIVE_CLEANUP=true && npm run seed");
+      console.log("  └───────────────────────────────────────────────────────────────");
+      console.log("");
+    } else {
+      if (mode === "overridden" && hasRealActivity(impact)) {
+        console.log("");
+        console.log("  ┌─ Placeholder-room cleanup OVERRIDDEN -------------------------");
+        console.log("  │  SEED_ALLOW_DESTRUCTIVE_CLEANUP is set, so this will be DELETED:");
+        for (const line of formatImpact(impact, oldRooms.map((r) => r.number))) {
+          console.log(`  │${line}`);
+        }
+        console.log("  └───────────────────────────────────────────────────────────────");
+        console.log("");
+      }
+
+      await deletePlaceholderData(oldRoomIds, impact);
+      await prisma.roomType.deleteMany({ where: { id: { in: ["seed-single", "seed-double"] } } });
+      console.log(
+        `Removed ${oldRooms.length} placeholder room(s) (${oldRooms.map((r) => r.number).join(", ")}) and their temporary tariffs.`
+      );
+    }
+  }
 
   // Axis Hotel Nakuru's real tariff card: occupancy crossed with meal plan.
   //
-  // This runs FIRST, before anything else touches RoomType: the room-creation
-  // loop below references these ids as foreign keys, and the Twin rename after
-  // the legacy cleanup updates two of these rows. On a fresh database nothing
-  // exists yet, so creating them up front is what makes `npm run seed` work
-  // against an empty schema.
+  // This must run BEFORE the room-creation loop further down, which uses
+  // "tariff-single-bo" / "tariff-triple-bo" as foreign keys -- on a fresh
+  // database those rows do not exist yet, and the loop fails.
+  //
+  // The "triple" ids are legacy names: there is no Triple occupancy any more,
+  // those are the Twin-bed tariffs (rooms 27 & 28). Their display names must
+  // start with "Twin" or lib/tariffs.ts cannot match them to a TWIN booking.
   const tariffs: {
     id: string;
     name: string;
     baseRate: number;
     capacity: number;
-    mealPlan: "BED_ONLY" | "BED_AND_BREAKFAST";
+    mealPlan: "BED_ONLY" | "BED_AND_BREAKFAST" | "HALF_BOARD";
   }[] = [
     { id: "tariff-single-bo", name: "Single — Bed Only", baseRate: 2000, capacity: 1, mealPlan: "BED_ONLY" },
     { id: "tariff-single-bb", name: "Single — B&B", baseRate: 2400, capacity: 1, mealPlan: "BED_AND_BREAKFAST" },
@@ -42,65 +220,18 @@ async function main() {
     { id: "tariff-double-bb", name: "Double — B&B", baseRate: 3300, capacity: 2, mealPlan: "BED_AND_BREAKFAST" },
     { id: "tariff-triple-bo", name: "Twin — Bed Only", baseRate: 3000, capacity: 2, mealPlan: "BED_ONLY" },
     { id: "tariff-triple-bb", name: "Twin — B&B", baseRate: 3800, capacity: 2, mealPlan: "BED_AND_BREAKFAST" },
+    { id: "tariff-single-hb", name: "Single — Half Board", baseRate: 3400, capacity: 1, mealPlan: "HALF_BOARD" },
+    { id: "tariff-double-hb", name: "Double — Half Board", baseRate: 5300, capacity: 2, mealPlan: "HALF_BOARD" },
+    { id: "tariff-triple-hb", name: "Twin — Half Board", baseRate: 5800, capacity: 2, mealPlan: "HALF_BOARD" },
   ];
   for (const t of tariffs) {
     await prisma.roomType.upsert({
       where: { id: t.id },
-      update: { baseRate: t.baseRate, mealPlan: t.mealPlan, capacity: t.capacity, name: t.name },
+      update: { name: t.name, baseRate: t.baseRate, mealPlan: t.mealPlan, capacity: t.capacity },
       create: t,
     });
   }
-  console.log("Seeded the 6 real Axis Hotel tariff room types (Single/Double/Twin x Bed Only/B&B).");
-
-  // One-time real-room-list migration: rooms 101/102 were placeholder test
-  // rooms with made-up tariffs. Clear anything attached to them, then
-  // replace with Axis Hotel Nakuru's real 26 rooms across floors 1-4.
-  // Rooms 27 and 28 are the only fixed twin-bed rooms; every other room is
-  // flexible (Single or Double chosen at check-in), so isTwin marks only
-  // those two.
-  // Find every room still on the old placeholder tariffs, whatever it's
-  // named -- not just 101/102 -- in case anything else got created
-  // through the UI while those were still the only types available.
-  const oldRooms = await prisma.room.findMany({
-    where: { roomTypeId: { in: ["seed-single", "seed-double"] } },
-  });
-  const oldRoomIds = oldRooms.map((r) => r.id);
-  if (oldRooms.length > 0) {
-    console.log(`Found ${oldRooms.length} room(s) still on old placeholder tariffs: ${oldRooms.map((r) => r.number).join(", ")}`);
-  }
-
-  if (oldRoomIds.length > 0) {
-    const oldFolioIds = (
-      await prisma.reservationRoom.findMany({
-        where: { roomId: { in: oldRoomIds } },
-        select: { reservation: { select: { folios: { select: { id: true } } } } },
-      })
-    ).flatMap((rr) => rr.reservation.folios.map((f) => f.id));
-
-    if (oldFolioIds.length > 0) {
-      await prisma.payment.deleteMany({ where: { folioId: { in: oldFolioIds } } });
-      await prisma.folioItem.deleteMany({ where: { folioId: { in: oldFolioIds } } });
-      await prisma.order.deleteMany({ where: { folioId: { in: oldFolioIds } } });
-      await prisma.folio.deleteMany({ where: { id: { in: oldFolioIds } } });
-    }
-
-    const oldReservationIds = (
-      await prisma.reservationRoom.findMany({
-        where: { roomId: { in: oldRoomIds } },
-        select: { reservationId: true },
-      })
-    ).map((rr) => rr.reservationId);
-
-    await prisma.reservationRoom.deleteMany({ where: { roomId: { in: oldRoomIds } } });
-    if (oldReservationIds.length > 0) {
-      await prisma.reservation.deleteMany({ where: { id: { in: oldReservationIds } } });
-    }
-    await prisma.housekeepingTask.deleteMany({ where: { roomId: { in: oldRoomIds } } });
-    await prisma.maintenanceTicket.deleteMany({ where: { roomId: { in: oldRoomIds } } });
-    await prisma.room.deleteMany({ where: { id: { in: oldRoomIds } } });
-  }
-
-  await prisma.roomType.deleteMany({ where: { id: { in: ["seed-single", "seed-double"] } } });
+  console.log("Seeded the 9 real Axis Hotel tariff room types (Single/Double/Twin x Bed Only/B&B/Half Board).");
 
   const floors: { prefix: string; numbers: string[]; floor: string }[] = [
     { prefix: "", numbers: ["01", "02", "03", "04", "05", "06", "07", "08"], floor: "1" },
@@ -112,21 +243,20 @@ async function main() {
   let realRoomCount = 0;
   for (const group of floors) {
     for (const num of group.numbers) {
-      const isTwin = num === "27" || num === "28";
+      const hasTwinBeds = num === "27" || num === "28";
       await prisma.room.upsert({
         where: { number: num },
-        update: { isTwin, floor: group.floor },
+        update: { floor: group.floor },
         create: {
           number: num,
           floor: group.floor,
-          isTwin,
-          roomTypeId: isTwin ? "tariff-triple-bo" : "tariff-single-bo",
+          roomTypeId: hasTwinBeds ? "tariff-triple-bo" : "tariff-single-bo",
         },
       });
       realRoomCount++;
     }
   }
-  console.log(`Seeded the real ${realRoomCount}-room list across floors 1-4 (rooms 27 & 28 flagged as Twin).`);
+  console.log(`Seeded the real ${realRoomCount}-room list across floors 1-4 (every room bookable as Single, Double or Twin).`);
 
   const methods = ["Cash", "M-Pesa", "Card", "Bank Transfer"];
   for (const name of methods) {
@@ -148,6 +278,8 @@ async function main() {
       { name: "Beef Stew & Ugali", price: 550 },
       { name: "Grilled Chicken & Chips", price: 700 },
     ],
+    Dinner: [],
+    "Ala carte": [],
     Drinks: [
       { name: "Soda", price: 100 },
       { name: "Fresh Juice", price: 200 },
@@ -155,13 +287,15 @@ async function main() {
     ],
   };
   for (const [categoryName, items] of Object.entries(menu)) {
+    const categorySlug = categoryName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const categoryId = `seed-cat-${categorySlug}`;
     const category = await prisma.menuCategory.upsert({
-      where: { id: `seed-cat-${categoryName.toLowerCase()}` },
-      update: {},
-      create: { id: `seed-cat-${categoryName.toLowerCase()}`, name: categoryName },
+      where: { id: categoryId },
+      update: { name: categoryName },
+      create: { id: categoryId, name: categoryName },
     });
     for (const item of items) {
-      const id = `seed-item-${categoryName.toLowerCase()}-${item.name.toLowerCase().replace(/\s+/g, "-")}`;
+      const id = `seed-item-${categorySlug}-${item.name.toLowerCase().replace(/\s+/g, "-")}`;
       await prisma.menuItem.upsert({
         where: { id },
         update: {},
@@ -262,7 +396,7 @@ async function main() {
     });
   }
   console.log("Seeded recipes for English Breakfast, Beef Stew & Ugali, and Grilled Chicken & Chips.");
-  console.log(`Admin user id: ${admin.id}`);
+  console.log(`Admin user id: ${admin?.id}`);
 }
 
 main()

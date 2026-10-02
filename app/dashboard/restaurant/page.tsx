@@ -1,21 +1,50 @@
 import { prisma } from "@/lib/prisma";
 import { computeAvailablePortions } from "@/lib/inventory";
 import RestaurantClient from "@/components/restaurant/RestaurantClient";
+import { requirePageRole } from "@/lib/page-auth";
+import { ROLE_GROUPS } from "@/lib/permissions";
+import { sortMenuCategories } from "@/lib/menu-categories";
+import { getRestaurantDashboardData } from "@/lib/restaurant-dashboard";
 
 export const dynamic = "force-dynamic";
 
 export default async function RestaurantPage() {
-  const categories = await prisma.menuCategory.findMany({
-    include: {
-      items: {
-        where: { isActive: true },
-        include: { recipe: { include: { ingredients: { include: { inventoryItem: true } } } } },
-      },
-    },
-    orderBy: { name: "asc" },
-  });
+  const session = await requirePageRole(ROLE_GROUPS.RESTAURANT_POS);
 
-  const menu = categories.map((c) => ({
+  const [categories, dashboardData] = await Promise.all([
+    prisma.menuCategory.findMany({
+      relationLoadStrategy: "join",
+      select: {
+        id: true,
+        name: true,
+        items: {
+          where: { isActive: true },
+          select: {
+            id: true,
+            name: true,
+            price: true,
+            recipe: {
+              select: {
+                portions: true,
+                ingredients: {
+                  select: {
+                    inventoryItemId: true,
+                    quantity: true,
+                    inventoryItem: {
+                      select: { name: true, unit: true, currentStock: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    }),
+    getRestaurantDashboardData(),
+  ]);
+
+  const menu = sortMenuCategories(categories).map((c) => ({
     id: c.id,
     name: c.name,
     items: c.items.map((i) => {
@@ -35,5 +64,14 @@ export default async function RestaurantPage() {
     }),
   }));
 
-  return <RestaurantClient menu={menu} />;
+  return (
+    <RestaurantClient
+      menu={menu}
+      currentUserRole={session.user.role}
+      initialFolios={dashboardData.folios}
+      initialMethods={dashboardData.paymentMethods}
+      initialActivity={dashboardData.activity}
+      initialTodayTotal={dashboardData.todayTotal}
+    />
+  );
 }

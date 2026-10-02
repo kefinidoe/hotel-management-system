@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/authz";
+import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
 
 export async function GET() {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
+  const forbidden = requireRole(auth, ROLE_GROUPS.HOUSEKEEPING);
+  if (forbidden) return forbidden;
+
   const tasks = await prisma.housekeepingTask.findMany({
+    where: { room: { isActive: true } },
     include: { room: { include: { roomType: true } }, assignee: true },
     orderBy: { updatedAt: "desc" },
   });

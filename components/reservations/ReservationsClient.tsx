@@ -3,10 +3,13 @@
 import { useEffect, useState, useCallback } from "react";
 import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 import clsx from "clsx";
+import type { RoleName } from "@prisma/client";
 import { startOfWeek, addDays, isoDay } from "@/lib/dates";
+import { hasRole, ROLE_GROUPS } from "@/lib/permissions";
+import type { RoomStatus } from "@prisma/client";
 import CreateReservationModal from "./CreateReservationModal";
 
-type Room = { id: string; number: string; roomTypeName: string; baseRate: number; isTwin: boolean };
+type Room = { id: string; number: string; roomTypeName: string; baseRate: number; status: RoomStatus };
 type Reservation = {
   id: string;
   code: string;
@@ -17,6 +20,10 @@ type Reservation = {
   guestPhone: string | null;
   rooms: { roomId: string; roomNumber: string; rate: number }[];
 };
+
+function canEditReservation(status: string) {
+  return status === "PENDING" || status === "CONFIRMED";
+}
 
 function statusBarClasses(status: string) {
   switch (status) {
@@ -31,7 +38,14 @@ function statusBarClasses(status: string) {
   }
 }
 
-export default function ReservationsClient({ rooms }: { rooms: Room[] }) {
+export default function ReservationsClient({
+  rooms,
+  currentUserRole,
+}: {
+  rooms: Room[];
+  currentUserRole: RoleName;
+}) {
+  const canApplyDiscount = hasRole(currentUserRole, ROLE_GROUPS.MANAGEMENT);
   const [weekOffset, setWeekOffset] = useState(0);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,7 +116,13 @@ export default function ReservationsClient({ rooms }: { rooms: Room[] }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "CANCELLED" }),
     });
-    if (res.ok) load();
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.error || "Could not cancel the reservation.");
+      return;
+    }
+    setError(null);
+    load();
   }
 
   return (
@@ -172,8 +192,9 @@ export default function ReservationsClient({ rooms }: { rooms: Room[] }) {
                 {barsForRoom(room.id).map(({ reservation, startCol, span }) => (
                   <div
                     key={reservation.id}
-                    draggable
-                    onDragStart={(e) =>
+                    draggable={canEditReservation(reservation.status)}
+                    onDragStart={(e) => {
+                      if (!canEditReservation(reservation.status)) return;
                       e.dataTransfer.setData(
                         "text/plain",
                         JSON.stringify({
@@ -182,15 +203,22 @@ export default function ReservationsClient({ rooms }: { rooms: Room[] }) {
                           checkOutDate: reservation.checkOutDate,
                           originalStartCol: startCol,
                         })
-                      )
-                    }
+                      );
+                    }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      cancelReservation(reservation.id);
+                      if (canEditReservation(reservation.status)) {
+                        cancelReservation(reservation.id);
+                      }
                     }}
-                    title={`${reservation.guestName} — ${reservation.code} (click to cancel)`}
+                    title={
+                      canEditReservation(reservation.status)
+                        ? `${reservation.guestName} — ${reservation.code} (click to cancel)`
+                        : `${reservation.guestName} — ${reservation.code} (manage from Front Desk)`
+                    }
                     className={clsx(
-                      "absolute top-1.5 bottom-1.5 rounded-control px-2 py-1 text-xs font-medium truncate cursor-grab",
+                      "absolute top-1.5 bottom-1.5 rounded-control px-2 py-1 text-xs font-medium truncate",
+                      canEditReservation(reservation.status) ? "cursor-grab" : "cursor-default",
                       statusBarClasses(reservation.status)
                     )}
                     style={{
@@ -218,6 +246,7 @@ export default function ReservationsClient({ rooms }: { rooms: Room[] }) {
           rooms={rooms}
           defaultRoomId={createFor.roomId}
           defaultDate={createFor.date}
+          canApplyDiscount={canApplyDiscount}
           onClose={() => setCreateFor(null)}
           onCreated={load}
           onError={setError}

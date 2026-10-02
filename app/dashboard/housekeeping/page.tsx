@@ -1,11 +1,16 @@
 import { prisma } from "@/lib/prisma";
 import HousekeepingClient from "@/components/housekeeping/HousekeepingClient";
+import { requirePageRole } from "@/lib/page-auth";
+import { ROLE_GROUPS } from "@/lib/permissions";
 
 export const dynamic = 'force-dynamic';
 
 export default async function HousekeepingPage() {
+  await requirePageRole(ROLE_GROUPS.HOUSEKEEPING);
+
   const [tasks, staff] = await Promise.all([
     prisma.housekeepingTask.findMany({
+      where: { room: { isActive: true } },
       include: { room: { include: { roomType: true } }, assignee: true },
       orderBy: { updatedAt: "desc" },
     }),

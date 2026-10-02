@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { requireRole } from "@/lib/authz";
+import { requireRole, ROLE_GROUPS } from "@/lib/authz";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -11,15 +11,16 @@ const ROOM_STATUS_FOR: Record<string, string> = {
   READY: "AVAILABLE",
 };
 
-export async function PUT(req: Request, { params }: { params: { id: string } }) {
+export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-   const forbidden = requireRole(session, ["ADMIN", "MANAGER", "HOUSEKEEPER"]);
+   const forbidden = requireRole(session, ROLE_GROUPS.HOUSEKEEPING);
   if (forbidden) return forbidden;  
   const body = await req.json();
   const task = await prisma.housekeepingTask.update({
-    where: { id: params.id },
+    where: { id },
     data: {
       status: body.status,
       assigneeId: body.assigneeId ?? undefined,

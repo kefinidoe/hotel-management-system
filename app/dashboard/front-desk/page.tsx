@@ -1,64 +1,146 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import FrontDeskClient from "@/components/frontdesk/FrontDeskClient";
+import { requirePageRole } from "@/lib/page-auth";
+import { ROLE_GROUPS } from "@/lib/permissions";
+import { isBookableToday } from "@/lib/room-status";
+import {
+  accommodationRequired,
+  folioTotals,
+  roundMoney,
+  stayNights,
+} from "@/lib/billing";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
+
+const frontDeskInclude = {
+  guest: true,
+  rooms: { include: { room: true } },
+  folios: {
+    include: {
+      items: { select: { total: true } },
+      payments: {
+        where: { status: "COMPLETED" },
+        select: { amount: true },
+      },
+    },
+  },
+} satisfies Prisma.ReservationInclude;
+
+type FrontDeskReservation = Prisma.ReservationGetPayload<{
+  include: typeof frontDeskInclude;
+}>;
 
 function startOfToday() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  return date;
 }
+
 function endOfToday() {
-  const d = startOfToday();
-  d.setDate(d.getDate() + 1);
-  return d;
+  const date = startOfToday();
+  date.setDate(date.getDate() + 1);
+  return date;
+}
+
+function serializeReservation(reservation: FrontDeskReservation) {
+  const openFolio = reservation.folios.find((folio) => !folio.isClosed);
+  const totals = openFolio
+    ? folioTotals(
+        openFolio.items.map((item) => Number(item.total)),
+        openFolio.payments.map((payment) => Number(payment.amount))
+      )
+    : (() => {
+        const required = accommodationRequired(
+          reservation.rooms.map((room) => Number(room.rate)),
+          stayNights(reservation.checkInDate, reservation.checkOutDate),
+          Number(reservation.discount ?? 0)
+        );
+        return { required, paid: 0, balance: required };
+      })();
+
+  return {
+    id: reservation.id,
+    code: reservation.code,
+    guestName: reservation.guest.fullName,
+    checkInDate: reservation.checkInDate.toISOString(),
+    checkOutDate: reservation.checkOutDate.toISOString(),
+    roomId: reservation.rooms[0]?.room.id ?? "",
+    roomNumbers: reservation.rooms.map((room) => room.room.number).join(", "),
+    openFolioId: openFolio?.id ?? null,
+    requiredAmount: totals.required,
+    paidAmount: totals.paid,
+    balance: totals.balance,
+    nightlyRateTotal: roundMoney(
+      reservation.rooms.reduce((sum, room) => sum + Number(room.rate), 0)
+    ),
+  };
 }
 
 export default async function FrontDeskPage() {
+  const session = await requirePageRole(ROLE_GROUPS.FRONT_DESK);
   const todayStart = startOfToday();
   const todayEnd = endOfToday();
 
-  const [arrivals, departures, inHouse, rooms] = await Promise.all([
+  const [reservations, rooms] = await Promise.all([
     prisma.reservation.findMany({
-      where: { checkInDate: { gte: todayStart, lt: todayEnd }, status: { in: ["CONFIRMED", "PENDING"] } },
-      include: { guest: true, rooms: { include: { room: true } } },
+      relationLoadStrategy: "join",
+      where: {
+        OR: [
+          {
+            checkInDate: { gte: todayStart, lt: todayEnd },
+            status: { in: ["CONFIRMED", "PENDING"] },
+          },
+          { status: "CHECKED_IN" },
+        ],
+      },
+      include: frontDeskInclude,
       orderBy: { checkInDate: "asc" },
     }),
-    prisma.reservation.findMany({
-      where: { checkOutDate: { gte: todayStart, lt: todayEnd }, status: "CHECKED_IN" },
-      include: { guest: true, rooms: { include: { room: true } }, folios: true },
-      orderBy: { checkOutDate: "asc" },
+    prisma.room.findMany({
+      relationLoadStrategy: "join",
+      // Retired rooms keep their history but are not part of the rooms a guest
+      // can be given, so they never appear on the board.
+      where: { isActive: true },
+      include: { roomType: true },
+      orderBy: { number: "asc" },
     }),
-    prisma.reservation.findMany({
-      where: { status: "CHECKED_IN" },
-      include: { guest: true, rooms: { include: { room: true } }, folios: true },
-      orderBy: { checkInDate: "asc" },
-    }),
-    prisma.room.findMany({ include: { roomType: true }, orderBy: { number: "asc" } }),
   ]);
 
-  const serializeRes = (r: (typeof arrivals)[number] & { folios?: { id: string; isClosed: boolean }[] }) => ({
-    id: r.id,
-    code: r.code,
-    guestName: r.guest.fullName,
-    checkInDate: r.checkInDate.toISOString(),
-    checkOutDate: r.checkOutDate.toISOString(),
-    roomNumbers: r.rooms.map((rr) => rr.room.number).join(", "),
-    openFolioId: r.folios?.find((f) => !f.isClosed)?.id ?? null,
-  });
+  const arrivals = reservations.filter(
+    (reservation) =>
+      (reservation.status === "CONFIRMED" || reservation.status === "PENDING") &&
+      reservation.checkInDate >= todayStart &&
+      reservation.checkInDate < todayEnd
+  );
+  const inHouse = reservations.filter(
+    (reservation) => reservation.status === "CHECKED_IN"
+  );
+  const departures = inHouse
+    .filter(
+      (reservation) =>
+        reservation.checkOutDate >= todayStart &&
+        reservation.checkOutDate < todayEnd
+    )
+    .sort(
+      (left, right) =>
+        left.checkOutDate.getTime() - right.checkOutDate.getTime()
+    );
 
   return (
     <FrontDeskClient
-      arrivals={arrivals.map(serializeRes)}
-      departures={departures.map(serializeRes)}
-      inHouse={inHouse.map(serializeRes)}
-      availableRoomsCount={rooms.filter((r) => r.status === "AVAILABLE").length}
-      rooms={rooms.map((r) => ({
-        id: r.id,
-        number: r.number,
-        roomTypeName: r.roomType.name,
-        baseRate: Number(r.roomType.baseRate),
-        isTwin: r.isTwin,
+      currentUserRole={session.user.role}
+      arrivals={arrivals.map(serializeReservation)}
+      departures={departures.map(serializeReservation)}
+      inHouse={inHouse.map(serializeReservation)}
+      availableRoomsCount={rooms.filter((room) => isBookableToday(room.status)).length}
+      rooms={rooms.map((room) => ({
+        id: room.id,
+        number: room.number,
+        floor: room.floor,
+        status: room.status,
+        roomTypeName: room.roomType.name,
+        baseRate: Number(room.roomType.baseRate),
       }))}
     />
   );

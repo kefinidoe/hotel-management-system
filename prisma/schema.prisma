@@ -2,7 +2,8 @@
 // PostgreSQL, UUID primary keys, timestamps, soft deletion where it matters.
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["relationJoins"]
 }
 
 datasource db {
@@ -45,6 +46,7 @@ model User {
   expensesRequested   Expense[]          @relation("ExpenseRequestedBy")
   purchasesRecorded   Purchase[]         @relation("PurchaseCreatedBy")
   wastagesRecorded    Wastage[]          @relation("WastageRecordedBy")
+  wastagesAccountable Wastage[]          @relation("WastageAccountable")
   stockMovements      StockMovement[]    @relation("StockMovementUser")
 }
 
@@ -78,6 +80,7 @@ model RoomType {
 enum MealPlan {
   BED_ONLY
   BED_AND_BREAKFAST
+  HALF_BOARD
 }
 
 model Room {
@@ -87,7 +90,7 @@ model Room {
   roomTypeId String
   roomType   RoomType   @relation(fields: [roomTypeId], references: [id])
   status     RoomStatus @default(AVAILABLE)
-  isTwin     Boolean    @default(false) // true only for rooms 27 & 28 -- fixed twin-bed rooms, no occupancy choice at check-in
+  isActive   Boolean    @default(true) // inactive rooms stay in history but are hidden from hotel operations
   notes      String?
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
@@ -155,6 +158,9 @@ model Reservation {
 
   rooms  ReservationRoom[]
   folios Folio[]
+
+  @@index([status, checkInDate])
+  @@index([status, checkOutDate])
 }
 
 // Join table: a reservation can cover multiple rooms
@@ -184,6 +190,9 @@ model Folio {
   items    FolioItem[]
   payments Payment[]
   orders   Order[]
+
+  @@index([isClosed])
+  @@index([reservationId])
 }
 
 enum FolioItemType {
@@ -206,6 +215,8 @@ model FolioItem {
   taxRate     Decimal       @db.Decimal(5, 2) @default(0) // configurable, not hard-coded
   total       Decimal       @db.Decimal(10, 2)
   createdAt   DateTime      @default(now())
+
+  @@index([type, createdAt])
 }
 
 model PaymentMethod {
@@ -298,6 +309,8 @@ model MenuItem {
   isActive   Boolean      @default(true)
 
   recipe Recipe?
+
+  @@index([categoryId, isActive])
 }
 
 // ---------- Restaurant orders ----------
@@ -433,15 +446,20 @@ enum WastageReason {
 }
 
 model Wastage {
-  id              String        @id @default(uuid())
-  inventoryItemId String
-  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
-  quantity        Decimal       @db.Decimal(12, 2) // in the item's base unit
-  reason          WastageReason
-  department      String?
-  recordedById    String
-  recordedBy      User          @relation("WastageRecordedBy", fields: [recordedById], references: [id])
-  createdAt       DateTime      @default(now())
+  id                String        @id @default(uuid())
+  inventoryItemId   String
+  inventoryItem     InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  quantity          Decimal       @db.Decimal(12, 2) // in the item's base unit
+  reason            WastageReason
+  department        String?
+  recordedById      String
+  recordedBy        User          @relation("WastageRecordedBy", fields: [recordedById], references: [id])
+  accountableUserId String?
+  accountableUser   User?         @relation("WastageAccountable", fields: [accountableUserId], references: [id], onDelete: SetNull)
+  accountableName   String?       // immutable name snapshot; null only for records created before accountability tracking
+  createdAt         DateTime      @default(now())
+
+  @@index([accountableUserId])
 }
 
 // ---------- Expenses ----------

@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { requireAuth, requireRole } from "@/lib/authz";
+import { requireRole, ROLE_GROUPS } from "@/lib/authz";
+import { isMealPlan } from "@/lib/tariffs";
 
 export async function GET() {
-  const auth = await requireAuth();
-  if (auth instanceof NextResponse) return auth;
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const roomTypes = await prisma.roomType.findMany({ orderBy: { name: "asc" } });
   return NextResponse.json(roomTypes.map((rt) => ({ ...rt, baseRate: Number(rt.baseRate) })));
@@ -16,7 +17,7 @@ export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const forbidden = requireRole(session, ["ADMIN", "MANAGER", "RECEPTIONIST"]);
+    const forbidden = requireRole(session, ROLE_GROUPS.MANAGEMENT);
   if (forbidden) return forbidden;
 
   
@@ -25,12 +26,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Name and base rate are required." }, { status: 400 });
   }
 
+  // The meal plan is what lets the reservation screens match this rate to a
+  // booking, so it is validated rather than stored blindly.
+  const mealPlan = isMealPlan(body.mealPlan) ? body.mealPlan : null;
+
   const roomType = await prisma.roomType.create({
     data: {
       name: body.name,
       description: body.description || null,
       baseRate: body.baseRate,
       capacity: body.capacity || 2,
+      mealPlan,
     },
   });
   return NextResponse.json({ ...roomType, baseRate: Number(roomType.baseRate) }, { status: 201 });

@@ -3,8 +3,21 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { UserPlus } from "lucide-react";
+import type { RoleName } from "@prisma/client";
 import CreateReservationModal from "@/components/reservations/CreateReservationModal";
 import FolioModal from "./FolioModal";
+import CheckInModal from "./CheckInModal";
+import ExtendStayModal from "./ExtendStayModal";
+import { hasRole, ROLE_GROUPS } from "@/lib/permissions";
+import type { RoomStatus } from "@prisma/client";
+import {
+  isBookableToday,
+  ROOM_STATUS_HINTS,
+  ROOM_STATUS_LABELS,
+  roomStatusClasses,
+  roomStatusDotClasses,
+  summariseRooms,
+} from "@/lib/room-status";
 
 type ResRow = {
   id: string;
@@ -12,18 +25,39 @@ type ResRow = {
   guestName: string;
   checkInDate: string;
   checkOutDate: string;
+  roomId: string;
   roomNumbers: string;
   openFolioId: string | null;
+  requiredAmount: number;
+  paidAmount: number;
+  balance: number;
+  nightlyRateTotal: number;
 };
-type Room = { id: string; number: string; roomTypeName: string; baseRate: number; isTwin: boolean };
+type Room = {
+  id: string;
+  number: string;
+  floor: string | null;
+  status: RoomStatus;
+  roomTypeName: string;
+  baseRate: number;
+};
+
+function money(value: number) {
+  return `KSh ${value.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
 
 export default function FrontDeskClient({
+  currentUserRole,
   arrivals,
   departures,
   inHouse,
   availableRoomsCount,
   rooms,
 }: {
+  currentUserRole: RoleName;
   arrivals: ResRow[];
   departures: ResRow[];
   inHouse: ResRow[];
@@ -31,30 +65,23 @@ export default function FrontDeskClient({
   rooms: Room[];
 }) {
   const router = useRouter();
+  const canManageStays = hasRole(currentUserRole, ROLE_GROUPS.GUEST_STAYS);
+  const canOverrideBalance = hasRole(currentUserRole, ROLE_GROUPS.MANAGEMENT);
   const [error, setError] = useState<string | null>(null);
   const [walkInOpen, setWalkInOpen] = useState(false);
+  const [checkInReservation, setCheckInReservation] = useState<ResRow | null>(null);
+  const [extendReservation, setExtendReservation] = useState<ResRow | null>(null);
   const [openFolio, setOpenFolio] = useState<{ folioId: string; reservationId: string } | null>(null);
-  const [loadingId, setLoadingId] = useState<string | null>(null);
+
+  const roomSummary = summariseRooms(rooms);
+  const roomsByFloor = rooms.reduce<Record<string, Room[]>>((groups, room) => {
+    const floor = room.floor ?? "Other";
+    (groups[floor] ??= []).push(room);
+    return groups;
+  }, {});
 
   function refresh() {
     router.refresh();
-  }
-
-  async function checkIn(reservationId: string) {
-    setLoadingId(reservationId);
-    setError(null);
-    const res = await fetch("/api/check-in", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reservationId }),
-    });
-    setLoadingId(null);
-    if (!res.ok) {
-      const data = await res.json();
-      setError(data.error || "Could not check in guest.");
-      return;
-    }
-    refresh();
   }
 
   return (
@@ -80,12 +107,14 @@ export default function FrontDeskClient({
           </div>
         </div>
 
-        <button
-          onClick={() => setWalkInOpen(true)}
-          className="btn-primary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
-        >
-          <UserPlus size={17} /> Walk-in
-        </button>
+        {canManageStays && (
+          <button
+            onClick={() => setWalkInOpen(true)}
+            className="btn-primary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+          >
+            <UserPlus size={17} /> Walk-in
+          </button>
+        )}
       </div>
 
       {error && (
@@ -93,6 +122,60 @@ export default function FrontDeskClient({
           {error}
         </p>
       )}
+
+      <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm mb-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div>
+            <h2 className="text-base font-bold">Room Status</h2>
+            <p className="text-xs text-text-secondary mt-0.5">
+              {roomSummary.bookable} of {roomSummary.total} rooms free and clean right now
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={refresh}
+            className="text-xs font-medium rounded-control border border-border px-3 py-1.5 hover:bg-bg"
+          >
+            Refresh
+          </button>
+        </div>
+
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5 mb-4">
+          {Array.from(roomSummary.counts.entries()).map(([status, count]) => (
+            <span key={status} className="inline-flex items-center gap-1.5 text-xs text-text-secondary">
+              <span className={`h-2 w-2 rounded-full ${roomStatusDotClasses(status)}`} />
+              {ROOM_STATUS_LABELS[status]}: <span className="font-semibold">{count}</span>
+            </span>
+          ))}
+        </div>
+
+        <div className="space-y-3">
+          {Object.entries(roomsByFloor)
+            .sort(([left], [right]) => left.localeCompare(right, undefined, { numeric: true }))
+            .map(([floor, floorRooms]) => (
+              <div key={floor}>
+                <p className="text-xs font-medium uppercase tracking-wide text-text-muted mb-1.5">
+                  {floor === "Other" ? "Other rooms" : `Floor ${floor}`}
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                  {floorRooms.map((room) => (
+                    <div
+                      key={room.id}
+                      title={ROOM_STATUS_HINTS[room.status]}
+                      className={`rounded-control border px-2.5 py-1.5 ${roomStatusClasses(room.status)}`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className={`h-1.5 w-1.5 rounded-full ${roomStatusDotClasses(room.status)}`} />
+                        <span className="text-sm font-semibold text-text-primary">{room.number}</span>
+                      </div>
+                      <p className="text-[11px] font-medium mt-0.5">{ROOM_STATUS_LABELS[room.status]}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
@@ -124,13 +207,22 @@ export default function FrontDeskClient({
                   </span>
                 </div>
 
-                <button
-                  onClick={() => checkIn(r.id)}
-                  disabled={loadingId === r.id}
-                  className="btn-primary w-full mt-4 transition-all duration-200 group-hover:shadow-sm"
-                >
-                  {loadingId === r.id ? "Checking in..." : "Check In"}
-                </button>
+                <div className="mt-3 flex items-center justify-between rounded-control bg-surface px-3 py-2 text-xs">
+                  <span className="text-text-secondary">Accommodation required</span>
+                  <span className="font-semibold">{money(r.requiredAmount)}</span>
+                </div>
+
+                {canManageStays && (
+                  <button
+                    onClick={() => {
+                      setError(null);
+                      setCheckInReservation(r);
+                    }}
+                    className="btn-primary w-full mt-4 transition-all duration-200 group-hover:shadow-sm"
+                  >
+                    Check In
+                  </button>
+                )}
               </div>
             ))}
             {arrivals.length === 0 && (
@@ -169,6 +261,23 @@ export default function FrontDeskClient({
                   <span className="shrink-0 rounded-full bg-champagne-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-champagne-500">
                     Departure
                   </span>
+                </div>
+
+                <div className="mt-3 grid grid-cols-3 gap-2 rounded-control bg-surface px-3 py-2 text-xs">
+                  <div>
+                    <p className="text-text-muted">Required</p>
+                    <p className="font-medium">{money(r.requiredAmount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-text-muted">Paid</p>
+                    <p className="font-medium text-success">{money(r.paidAmount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-text-muted">Balance</p>
+                    <p className={r.balance > 0 ? "font-semibold text-danger" : "font-semibold text-success"}>
+                      {money(r.balance)}
+                    </p>
+                  </div>
                 </div>
 
                 <button
@@ -222,16 +331,46 @@ export default function FrontDeskClient({
                   </span>
                 </div>
 
-                <button
-                  onClick={() =>
-                    r.openFolioId
-                      ? setOpenFolio({ folioId: r.openFolioId, reservationId: r.id })
-                      : setError("No open folio found for this reservation.")
-                  }
-                  className="btn-secondary w-full mt-4 transition-all duration-200 group-hover:border-primary-200"
-                >
-                  View Folio
-                </button>
+                <div className="mt-3 grid grid-cols-3 gap-2 rounded-control bg-surface px-3 py-2 text-xs">
+                  <div>
+                    <p className="text-text-muted">Required</p>
+                    <p className="font-medium">{money(r.requiredAmount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-text-muted">Paid</p>
+                    <p className="font-medium text-success">{money(r.paidAmount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-text-muted">Balance</p>
+                    <p className={r.balance > 0 ? "font-semibold text-danger" : "font-semibold text-success"}>
+                      {money(r.balance)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className={`mt-4 grid gap-2 ${canManageStays ? "grid-cols-2" : "grid-cols-1"}`}>
+                  <button
+                    onClick={() =>
+                      r.openFolioId
+                        ? setOpenFolio({ folioId: r.openFolioId, reservationId: r.id })
+                        : setError("No open folio found for this reservation.")
+                    }
+                    className="btn-secondary w-full transition-all duration-200 group-hover:border-primary-200"
+                  >
+                    View Folio
+                  </button>
+                  {canManageStays && (
+                    <button
+                      onClick={() => {
+                        setError(null);
+                        setExtendReservation(r);
+                      }}
+                      className="btn-primary w-full"
+                    >
+                      Add Days
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
             {inHouse.length === 0 && (
@@ -244,14 +383,38 @@ export default function FrontDeskClient({
         </section>
       </div>
 
-      {walkInOpen && rooms.length > 0 && (
+      {canManageStays && walkInOpen && rooms.length > 0 && (
         <CreateReservationModal
           rooms={rooms}
           defaultRoomId={rooms[0].id}
           defaultDate={new Date()}
+          canApplyDiscount={canOverrideBalance}
           onClose={() => setWalkInOpen(false)}
           onCreated={() => refresh()}
           onError={setError}
+        />
+      )}
+
+      {checkInReservation && (
+        <CheckInModal
+          reservation={checkInReservation}
+          rooms={rooms.map((room) => ({ id: room.id, number: room.number, status: room.status }))}
+          onClose={() => setCheckInReservation(null)}
+          onCheckedIn={(folioId) => {
+            refresh();
+            setOpenFolio({ folioId, reservationId: checkInReservation.id });
+          }}
+        />
+      )}
+
+      {extendReservation && (
+        <ExtendStayModal
+          reservation={extendReservation}
+          onClose={() => setExtendReservation(null)}
+          onExtended={(folioId) => {
+            refresh();
+            setOpenFolio({ folioId, reservationId: extendReservation.id });
+          }}
         />
       )}
 
@@ -259,6 +422,8 @@ export default function FrontDeskClient({
         <FolioModal
           folioId={openFolio.folioId}
           reservationId={openFolio.reservationId}
+          canCheckout={canManageStays}
+          canOverrideBalance={canOverrideBalance}
           onClose={() => setOpenFolio(null)}
           onDone={refresh}
         />

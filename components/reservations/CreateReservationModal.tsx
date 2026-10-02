@@ -3,13 +3,27 @@
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { addDays, isoDay } from "@/lib/dates";
+import type { RoomStatus } from "@prisma/client";
+import {
+  isBookableToday,
+  notBookableReason,
+  roomStatusClasses,
+  roomStatusDotClasses,
+  ROOM_STATUS_LABELS,
+  roomStatusRank,
+} from "@/lib/room-status";
+import {
+  findTariff,
+  MEAL_PLAN_LABELS,
+  MEAL_PLANS,
+  OCCUPANCY_LABELS,
+  OCCUPANCIES,
+  type MealPlanCode,
+  type Occupancy,
+} from "@/lib/tariffs";
 
-type Room = { id: string; number: string; roomTypeName: string; baseRate: number; isTwin: boolean };
-type PaymentMethod = { id: string; name: string };
-type RoomTypeTariff = { id: string; name: string; baseRate: number | string; mealPlan: "BED_ONLY" | "BED_AND_BREAKFAST" };
-
-type Occupancy = "SINGLE" | "DOUBLE";
-type MealPlan = "BED_ONLY" | "BED_AND_BREAKFAST";
+type Room = { id: string; number: string; roomTypeName: string; baseRate: number; status: RoomStatus };
+type RoomTypeTariff = { id: string; name: string; baseRate: number | string; mealPlan: string | null };
 
 function inputClass() {
   return "w-full rounded-control border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent";
@@ -19,6 +33,7 @@ export default function CreateReservationModal({
   rooms,
   defaultRoomId,
   defaultDate,
+  canApplyDiscount,
   onClose,
   onCreated,
   onError,
@@ -26,12 +41,13 @@ export default function CreateReservationModal({
   rooms: Room[];
   defaultRoomId: string;
   defaultDate: Date;
+  canApplyDiscount: boolean;
   onClose: () => void;
   onCreated: (reservationId: string) => void;
   onError: (e: string | null) => void;
 }) {
-  // Matches Axis Hotel's paper check-in card: guest identity + registration,
-  // stay dates, room/tariff, and payment mode -- all captured up front.
+  // Matches Axis Hotel's paper registration card: guest identity,
+  // stay dates, and room/tariff. Actual payment is recorded at check-in.
   const [guestName, setGuestName] = useState("");
   const [guestPhone, setGuestPhone] = useState("");
   const [idNumber, setIdNumber] = useState("");
@@ -41,19 +57,14 @@ export default function CreateReservationModal({
   const [checkInDate, setCheckInDate] = useState(isoDay(defaultDate));
   const [checkOutDate, setCheckOutDate] = useState(isoDay(addDays(defaultDate, 1)));
   const [occupancy, setOccupancy] = useState<Occupancy>("SINGLE");
-  const [mealPlan, setMealPlan] = useState<MealPlan>("BED_ONLY");
+  const [mealPlan, setMealPlan] = useState<MealPlanCode>("BED_ONLY");
   const [adults, setAdults] = useState("1");
   const [children, setChildren] = useState("0");
-  const [paymentMode, setPaymentMode] = useState("");
   const [discount, setDiscount] = useState("");
-  const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [tariffs, setTariffs] = useState<RoomTypeTariff[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/api/payment-methods")
-      .then((r) => r.json())
-      .then((m) => setMethods(m));
     fetch("/api/room-types")
       .then((r) => r.json())
       .then((t) => setTariffs(t));
@@ -61,20 +72,37 @@ export default function CreateReservationModal({
 
   const room = rooms.find((r) => r.id === roomId);
 
-  // Whichever tariff category applies: rooms 27/28 are always Twin,
-  // everything else is whichever of Single/Double the receptionist picks.
-  const tariffCategory = room?.isTwin ? "Twin" : occupancy === "DOUBLE" ? "Double" : "Single";
-
+  // Every room can be sold as Single, Double or Twin: the receptionist's choice
+  // of occupancy and meal plan picks the tariff.
   const matchedTariff = useMemo(
-    () => tariffs.find((t) => t.name.startsWith(tariffCategory) && t.mealPlan === mealPlan),
-    [tariffs, tariffCategory, mealPlan]
+    () => findTariff(tariffs, occupancy, mealPlan),
+    [tariffs, occupancy, mealPlan]
   );
   const rate = matchedTariff ? Number(matchedTariff.baseRate) : 0;
+
+  // Status is a "right now" fact, so it is enforced only when the stay starts
+  // today -- a room being cleaned today says nothing about next month.
+  const startsToday = checkInDate === isoDay(new Date());
+  const selectable = (candidate: Room) => !startsToday || isBookableToday(candidate.status);
+  const selectedRoomBlocked = room ? startsToday && !isBookableToday(room.status) : false;
+  const roomsForPicker = useMemo(
+    () =>
+      [...rooms].sort(
+        (left, right) =>
+          roomStatusRank(left.status) - roomStatusRank(right.status) ||
+          left.number.localeCompare(right.number, undefined, { numeric: true })
+      ),
+    [rooms]
+  );
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!matchedTariff) {
-      onError("Could not determine a rate for this room/occupancy/meal plan combination.");
+      onError("No tariff is set up for this occupancy and meal plan. Add one on the Rooms page.");
+      return;
+    }
+    if (selectedRoomBlocked && room) {
+      onError(`Room ${room.number} is ${ROOM_STATUS_LABELS[room.status]}. Choose an available room.`);
       return;
     }
     setLoading(true);
@@ -91,11 +119,12 @@ export default function CreateReservationModal({
         checkInDate: new Date(checkInDate).toISOString(),
         checkOutDate: new Date(checkOutDate).toISOString(),
         roomId,
-        rate,
+        tariffId: matchedTariff.id,
+        occupancy,
+        mealPlan,
         adults: Number(adults) || 1,
         children: Number(children) || 0,
-        paymentMode: paymentMode || null,
-        discount: discount ? Number(discount) : null,
+        discount: canApplyDiscount && discount ? Number(discount) : null,
       }),
     });
     setLoading(false);
@@ -179,62 +208,100 @@ export default function CreateReservationModal({
           <p className="text-xs font-medium uppercase tracking-wide text-text-muted pt-2">Room &amp; Tariff</p>
 
           <div>
-            <label className="block text-sm font-medium mb-1.5">Room</label>
-            <select value={roomId} onChange={(e) => setRoomId(e.target.value)} className={inputClass()}>
-              {rooms.map((r) => (
-                <option key={r.id} value={r.id}>
-                  Room {r.number}
+            <div className="flex items-baseline justify-between mb-1.5">
+              <label className="block text-sm font-medium">Room</label>
+              {startsToday && <span className="text-xs text-text-muted">Status is as of now</span>}
+            </div>
+            <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto rounded-control border border-border p-2">
+              {roomsForPicker.map((r) => {
+                const usable = selectable(r);
+                const chosen = r.id === roomId;
+                return (
+                  <button
+                    type="button"
+                    key={r.id}
+                    disabled={!usable}
+                    title={usable ? undefined : notBookableReason(r.status)}
+                    onClick={() => setRoomId(r.id)}
+                    className={[
+                      "flex items-center justify-between gap-2 rounded-control border px-2.5 py-2 text-left",
+                      chosen ? "border-primary-500 ring-1 ring-primary-500" : "border-border",
+                      usable ? "hover:border-primary-300" : "opacity-60 cursor-not-allowed",
+                    ].join(" ")}
+                  >
+                    <span className="text-sm font-medium">Room {r.number}</span>
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] font-medium ${roomStatusClasses(r.status)}`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${roomStatusDotClasses(r.status)}`} />
+                      {ROOM_STATUS_LABELS[r.status]}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {selectedRoomBlocked && room && (
+              <p className="text-xs text-danger mt-1.5">
+                Room {room.number} is {ROOM_STATUS_LABELS[room.status]} — {notBookableReason(room.status)}{" "}
+                Choose an available room.
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Occupancy</label>
+            <select
+              value={occupancy}
+              onChange={(e) => setOccupancy(e.target.value as Occupancy)}
+              className={inputClass()}
+            >
+              {OCCUPANCIES.map((option) => (
+                <option key={option} value={option}>
+                  {OCCUPANCY_LABELS[option]}
                 </option>
               ))}
             </select>
           </div>
 
-          {room?.isTwin ? (
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Occupancy</label>
-              <p className={`${inputClass()} bg-bg text-text-secondary`}>Twin (fixed -- 2 guests)</p>
-            </div>
-          ) : (
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Occupancy</label>
-              <select value={occupancy} onChange={(e) => setOccupancy(e.target.value as Occupancy)} className={inputClass()}>
-                <option value="SINGLE">Single</option>
-                <option value="DOUBLE">Double</option>
-              </select>
-            </div>
-          )}
-
           <div>
             <label className="block text-sm font-medium mb-1.5">Meal Plan</label>
-            <select value={mealPlan} onChange={(e) => setMealPlan(e.target.value as MealPlan)} className={inputClass()}>
-              <option value="BED_ONLY">Bed Only</option>
-              <option value="BED_AND_BREAKFAST">Bed &amp; Breakfast</option>
+            <select
+              value={mealPlan}
+              onChange={(e) => setMealPlan(e.target.value as MealPlanCode)}
+              className={inputClass()}
+            >
+              {MEAL_PLANS.map((option) => (
+                <option key={option} value={option}>
+                  {MEAL_PLAN_LABELS[option]}
+                </option>
+              ))}
             </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className={canApplyDiscount ? "grid grid-cols-2 gap-3" : ""}>
             <div>
-              <label className="block text-sm font-medium mb-1.5">Rate per night (KSh)</label>
+              <label className="block text-sm font-medium mb-1.5">
+                Approved rate per night (KSh)
+              </label>
               <p className={`${inputClass()} bg-bg font-medium`}>
                 {matchedTariff ? rate.toLocaleString() : "--"}
               </p>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Discount (KSh, optional)</label>
-              <input type="number" value={discount} onChange={(e) => setDiscount(e.target.value)} className={inputClass()} />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1.5">Payment Mode</label>
-            <select value={paymentMode} onChange={(e) => setPaymentMode(e.target.value)} className={inputClass()}>
-              <option value="">Not specified</option>
-              {methods.map((m) => (
-                <option key={m.id} value={m.name}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
+            {canApplyDiscount && (
+              <div>
+                <label className="block text-sm font-medium mb-1.5">
+                  Discount (KSh, optional)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={discount}
+                  onChange={(e) => setDiscount(e.target.value)}
+                  className={inputClass()}
+                />
+              </div>
+            )}
           </div>
 
           <button type="submit" disabled={loading || !matchedTariff} className="btn-primary w-full mt-2">

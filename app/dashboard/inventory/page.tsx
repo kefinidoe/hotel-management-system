@@ -1,10 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { getStockStatus } from "@/lib/inventory";
 import InventoryClient from "@/components/inventory/InventoryClient";
+import { requirePageRole } from "@/lib/page-auth";
+import { ROLE_GROUPS } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
 export default async function InventoryPage() {
+  await requirePageRole(ROLE_GROUPS.MANAGEMENT);
+
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
 

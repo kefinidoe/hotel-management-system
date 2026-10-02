@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getServerSession, Session } from "next-auth";
-import { RoleName } from "@prisma/client";
+import type { RoleName } from "@prisma/client";
 import { authOptions } from "@/lib/auth";
+
+// Re-exported so existing API imports remain stable.
+export { ROLE_GROUPS } from "@/lib/permissions";
 
 export async function requireAuth() {
   const session = await getServerSession(authOptions);
@@ -11,7 +14,7 @@ export async function requireAuth() {
   return session;
 }
 
-export function requireRole(session: Session, allowed: RoleName[]) {
+export function requireRole(session: Session, allowed: readonly RoleName[]) {
   const role = session.user.role;
   if (!allowed.includes(role)) {
     return NextResponse.json(

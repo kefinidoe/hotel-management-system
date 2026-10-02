@@ -4,7 +4,9 @@ import path from 'path';
 export default defineConfig({
   test: {
     globals: true,
-    environment: 'jsdom',
+    // 'node', not 'jsdom': no test currently renders a component, and jsdom@30
+    // pulls undici@8 which crashes on Node < 22.22 before a single test runs.
+    environment: 'node',
     setupFiles: ['./vitest.setup.ts'],
     coverage: {
       provider: 'v8',

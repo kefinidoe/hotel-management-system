@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/authz";
+import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
 
 const RESULT_LIMIT = 5;
 
 export async function GET(req: Request) {
     const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+
+  const forbidden = requireRole(auth, ROLE_GROUPS.FRONT_DESK);
+  if (forbidden) return forbidden;
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q")?.trim() ?? "";
 
@@ -49,7 +52,10 @@ export async function GET(req: Request) {
       orderBy: { createdAt: "desc" },
     }),
     prisma.room.findMany({
-      where: { number: { contains: q, mode: "insensitive" } },
+      where: {
+        isActive: true,
+        number: { contains: q, mode: "insensitive" },
+      },
       select: { id: true, number: true, status: true },
       take: RESULT_LIMIT,
       orderBy: { number: "asc" },

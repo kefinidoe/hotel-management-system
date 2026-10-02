@@ -39,6 +39,19 @@ const NON_DB_ENUM_LITERALS = new Set([
   "LOW_STOCK", //  "
   "OUT_OF_STOCK", //  "
   "IN_STOCK", //  "
+
+  // Prisma's own error codes: compared against `error.code`, never stored.
+  // Kept explicit rather than wildcard-matching /^P\d{4}$/ so that a *typo'd*
+  // Prisma code (a real bug) still fails this test.
+  "P2002", // unique constraint violation
+  "P2003", // foreign key constraint violation
+  "P2034", // write conflict / deadlock, retried
+
+  // Labels computed into the /api/reports response payload, not persisted:
+  // app/api/reports/route.ts derives `channel` and `bookingBasis` for its own
+  // grouping. `ROOM_CHARGE` here is a coincidental name match with the schema.
+  "PAY_NOW", //  "
+  "STAY_OVERLAP", //  "
 ]);
 
 type PrismaModel = { name: string; fields: { name: string; type: string; isList: boolean; isRelation: boolean }[] };

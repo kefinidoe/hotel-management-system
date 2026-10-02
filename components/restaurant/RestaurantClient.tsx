@@ -1,8 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Minus, Plus, Trash2, ShoppingCart, UtensilsCrossed, Settings2, X } from "lucide-react";
+import type { RoleName } from "@prisma/client";
 import clsx from "clsx";
+import { hasRole, ROLE_GROUPS } from "@/lib/permissions";
+import { isRequiredMenuCategory } from "@/lib/menu-categories";
 
 type MenuItem = { id: string; name: string; price: number; availablePortions: number | null };
 type Category = { id: string; name: string; items: MenuItem[] };
@@ -25,22 +28,36 @@ function inputClass() {
   return "w-full rounded-xl border border-border bg-surface px-4 py-3 text-sm shadow-sm transition-all placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400";
 }
 
-export default function RestaurantClient({ menu }: { menu: Category[] }) {
+export default function RestaurantClient({
+  menu,
+  currentUserRole,
+  initialFolios,
+  initialMethods,
+  initialActivity,
+  initialTodayTotal,
+}: {
+  menu: Category[];
+  currentUserRole: RoleName;
+  initialFolios: OpenFolio[];
+  initialMethods: PaymentMethod[];
+  initialActivity: ActivityItem[];
+  initialTodayTotal: number;
+}) {
+  const canManageMenu = hasRole(currentUserRole, ROLE_GROUPS.MANAGEMENT);
   const [activeCategory, setActiveCategory] = useState(menu[0]?.id ?? "");
   const [order, setOrder] = useState<OrderLine[]>([]);
-  const [vatRate, setVatRate] = useState("0");
   const [mode, setMode] = useState<"ROOM" | "PAY">("ROOM");
   const [tableNumber, setTableNumber] = useState("");
 
-  const [folios, setFolios] = useState<OpenFolio[]>([]);
-  const [folioId, setFolioId] = useState("");
-  const [methods, setMethods] = useState<PaymentMethod[]>([]);
-  const [methodId, setMethodId] = useState("");
+  const [folios, setFolios] = useState<OpenFolio[]>(initialFolios);
+  const [folioId, setFolioId] = useState(initialFolios[0]?.id ?? "");
+  const [methods] = useState<PaymentMethod[]>(initialMethods);
+  const [methodId, setMethodId] = useState(initialMethods[0]?.id ?? "");
   const [customerName, setCustomerName] = useState("");
   const [reference, setReference] = useState("");
 
-  const [activity, setActivity] = useState<ActivityItem[]>([]);
-  const [todayTotal, setTodayTotal] = useState(0);
+  const [activity, setActivity] = useState<ActivityItem[]>(initialActivity);
+  const [todayTotal, setTodayTotal] = useState(initialTodayTotal);
   const [manageOpen, setManageOpen] = useState(false);
 
   const [loading, setLoading] = useState(false);
@@ -61,20 +78,8 @@ export default function RestaurantClient({ menu }: { menu: Category[] }) {
     setFolioId((current) => current || data[0]?.id || "");
   }, []);
 
-  useEffect(() => {
-    loadActivity();
-    loadFolios();
-    fetch("/api/payment-methods")
-      .then((r) => r.json())
-      .then((m: PaymentMethod[]) => {
-        setMethods(m);
-        setMethodId((c) => c || m[0]?.id || "");
-      });
-  }, [loadActivity, loadFolios]);
-
   const subtotal = order.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
-  const vat = Number(vatRate) || 0;
-  const total = subtotal * (1 + vat / 100);
+  const total = subtotal;
 
   function addItem(item: MenuItem) {
     setSuccess(null);
@@ -118,8 +123,8 @@ export default function RestaurantClient({ menu }: { menu: Category[] }) {
       mode === "ROOM" ? "/api/restaurant/charge-to-room" : "/api/restaurant/pay-now";
     const payload =
       mode === "ROOM"
-        ? { items: order, folioId, tableNumber, vatRate: vat }
-        : { items: order, paymentMethodId: methodId, customerName, reference, tableNumber, vatRate: vat };
+        ? { items: order, folioId, tableNumber }
+        : { items: order, paymentMethodId: methodId, customerName, reference, tableNumber };
 
     const res = await fetch(endpoint, {
       method: "POST",
@@ -156,9 +161,11 @@ export default function RestaurantClient({ menu }: { menu: Category[] }) {
             payment at the counter.
           </p>
         </div>
-        <button onClick={() => setManageOpen(true)} className="btn-secondary rounded-xl shadow-sm hover:shadow-md transition-all">
-          <Settings2 size={16} /> Manage Menu
-        </button>
+        {canManageMenu && (
+          <button onClick={() => setManageOpen(true)} className="btn-secondary rounded-xl shadow-sm hover:shadow-md transition-all">
+            <Settings2 size={16} /> Manage Menu
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 items-start">
@@ -260,16 +267,6 @@ export default function RestaurantClient({ menu }: { menu: Category[] }) {
               <div className="flex justify-between">
                 <span className="text-text-secondary">Subtotal</span>
                 <span>{money(subtotal)}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-text-secondary">VAT %</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={vatRate}
-                  onChange={(e) => setVatRate(e.target.value)}
-                  className="w-24 rounded-control border border-border px-2 py-1 text-sm text-right"
-                />
               </div>
               <div className="flex justify-between font-bold text-base pt-3 border-t border-border">
                 <span>Total</span>
@@ -432,7 +429,9 @@ export default function RestaurantClient({ menu }: { menu: Category[] }) {
         </div>
       </div>
 
-      {manageOpen && <ManageMenuModal menu={menu} onClose={() => setManageOpen(false)} />}
+      {canManageMenu && manageOpen && (
+        <ManageMenuModal menu={menu} onClose={() => setManageOpen(false)} />
+      )}
     </div>
   );
 }
@@ -493,6 +492,32 @@ function ManageMenuModal({ menu, onClose }: { menu: Category[]; onClose: () => v
       return;
     }
     setMsg("Item removed. Refresh the page to update the POS.");
+  }
+
+  async function removeCategory(category: Category) {
+    if (
+      !confirm(
+        `Delete the empty category "${category.name}"? Required categories cannot be deleted.`
+      )
+    ) {
+      return;
+    }
+
+    setLoading(true);
+    setErr(null);
+    setMsg(null);
+    const res = await fetch(`/api/menu/categories/${category.id}`, {
+      method: "DELETE",
+    });
+    const data = await res.json().catch(() => ({}));
+    setLoading(false);
+    if (!res.ok) {
+      setErr(data.error || "Could not delete the category.");
+      return;
+    }
+
+    setMsg(`Category "${category.name}" deleted. Reloading the menu...`);
+    window.setTimeout(() => window.location.reload(), 500);
   }
 
   return (
@@ -558,6 +583,43 @@ function ManageMenuModal({ menu, onClose }: { menu: Category[]; onClose: () => v
             Add Category
           </button>
         </form>
+
+        <div className="border-t border-border pt-4 mt-4 space-y-2">
+          <div>
+            <p className="text-sm font-medium">Manage categories</p>
+            <p className="text-xs text-text-muted mt-1">
+              Empty extra categories can be deleted. Breakfast, Lunch, Dinner, and Ala carte are required.
+            </p>
+          </div>
+          {menu.map((category) => {
+            const required = isRequiredMenuCategory(category.name);
+            return (
+              <div
+                key={category.id}
+                className="flex items-center justify-between gap-3 border border-border rounded-control px-3 py-2 text-sm"
+              >
+                <div>
+                  <p className="font-medium">{category.name}</p>
+                  <p className="text-xs text-text-muted">
+                    {category.items.length} active item{category.items.length === 1 ? "" : "s"}
+                  </p>
+                </div>
+                {required ? (
+                  <span className="badge bg-primary-50 text-primary-700">Required</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => removeCategory(category)}
+                    disabled={loading}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-danger hover:underline disabled:opacity-50"
+                  >
+                    <Trash2 size={13} /> Delete
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
 
         <div className="border-t border-border pt-4 mt-4 space-y-3">
           <p className="text-sm font-medium">Current items</p>

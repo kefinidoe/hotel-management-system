@@ -14,6 +14,11 @@ import { describe, it, expect, beforeAll, vi } from "vitest";
  *
  * So this test fails loudly if the ordering inside seed.ts regresses, which
  * is exactly what makes `npm run seed` unusable on a fresh clone.
+ *
+ * It also guards the tariff NAMES, because lib/tariffs.ts resolves a booking's
+ * occupancy by prefix-matching them ("Twin — ...") and the ids are legacy
+ * ("tariff-triple-bo" is the Twin tariff). A rename that drops the "Twin"
+ * prefix makes every twin-bed room silently unbookable.
  */
 
 type Row = Record<string, any>;
@@ -50,9 +55,7 @@ function matches(row: Row, where: Row): boolean {
 }
 
 function findRow(model: string, where: Row): Row | undefined {
-  const rows = store[model] ?? [];
-  const key = Object.keys(where)[0];
-  return rows.find((r) => r[key] === where[key]);
+  return (store[model] ?? []).find((r) => matches(r, where));
 }
 
 /** Every model's API surface the seed actually uses, plus the FK checks. */
@@ -81,13 +84,24 @@ function modelApi(model: string) {
       return Promise.resolve({ ...existing });
     },
 
-    create(data: Row) {
+    // Prisma's real signature is create({ data }). The seed uses it that way,
+    // so the fake must unwrap `data` or every created row is stored as
+    // `{ data: {...} }` and assertions on the row's fields silently miss.
+    create({ data }: { data: Row }) {
       if (model === "room" && !findRow("roomType", { id: data.roomTypeId })) {
         return Promise.reject(fkViolation("room", "roomTypeId", data.roomTypeId));
       }
       const row = { ...data };
       (store[model] ??= []).push(row);
       return Promise.resolve({ ...row });
+    },
+
+    count() {
+      return Promise.resolve((store[model] ?? []).length);
+    },
+
+    aggregate() {
+      return Promise.resolve({ _sum: {}, _count: (store[model] ?? []).length });
     },
 
     findMany() {
@@ -166,25 +180,57 @@ describe("prisma/seed.ts runs against an empty database", () => {
     expect(admin?.role).toBe("ADMIN");
   });
 
-  it("creates all 6 tariff room types, with the Twin rows correctly named", () => {
+  it("creates all 9 tariffs: 3 occupancies x 3 meal plans", () => {
     const names = store.roomType.map((t) => t.name).sort();
     expect(names).toEqual(
       [
         "Double — B&B",
         "Double — Bed Only",
+        "Double — Half Board",
         "Single — B&B",
         "Single — Bed Only",
+        "Single — Half Board",
         "Twin — B&B",
         "Twin — Bed Only",
+        "Twin — Half Board",
       ].sort()
     );
-    const twinBo = store.roomType.find((t) => t.id === "tariff-triple-bo");
-    expect(twinBo?.capacity).toBe(2);
   });
 
-  it("creates the real 26-room list, with only rooms 27 & 28 flagged isTwin", () => {
+  it("names every tariff so lib/tariffs.ts can match it to an occupancy", () => {
+    // Regression guard. The tariff ids are legacy ("tariff-triple-bo" is the
+    // Twin-bed tariff), and lib/tariffs.ts resolves a booking's occupancy by
+    // prefix-matching the tariff NAME against "Single"/"Double"/"Twin". If a
+    // row is named "Triple — Bed Only", no Twin booking can ever match it and
+    // the room looks unbookable.
+    for (const t of store.roomType) {
+      expect(t.name).toMatch(/^(Single|Double|Twin) — /);
+    }
+    const twinNames = store.roomType.filter((t) => t.name.startsWith("Twin")).map((t) => t.name).sort();
+    expect(twinNames).toEqual(["Twin — B&B", "Twin — Bed Only", "Twin — Half Board"].sort());
+    for (const id of ["tariff-triple-bo", "tariff-triple-bb", "tariff-triple-hb"]) {
+      expect(store.roomType.find((t) => t.id === id)?.name).toMatch(/^Twin — /);
+    }
+  });
+
+  it("keeps 3 meal plans per occupancy, all present in the MealPlan enum", () => {
+    const mealPlans = store.roomType.map((t) => t.mealPlan).sort();
+    expect(mealPlans).toEqual(
+      [
+        "BED_AND_BREAKFAST", "BED_AND_BREAKFAST", "BED_AND_BREAKFAST",
+        "BED_ONLY", "BED_ONLY", "BED_ONLY",
+        "HALF_BOARD", "HALF_BOARD", "HALF_BOARD",
+      ].sort()
+    );
+  });
+
+  it("creates the real 26-room list, with rooms 27 & 28 on the Twin tariff", () => {
     expect(store.room).toHaveLength(26);
-    expect(store.room.filter((r) => r.isTwin).map((r) => r.number)).toEqual(["27", "28"]);
+    // migration 20261002090000_remove_room_is_twin dropped the isTwin column;
+    // twin-bed rooms are now identified by pointing at the Twin tariff.
+    expect(store.room.filter((r) => r.roomTypeId === "tariff-triple-bo").map((r) => r.number).sort())
+      .toEqual(["27", "28"]);
+    expect(store.room.some((r) => "isTwin" in r)).toBe(false);
     // Every room's roomTypeId must resolve — the fake rejects otherwise.
     for (const room of store.room) {
       expect(store.roomType.some((t) => t.id === room.roomTypeId)).toBe(true);
@@ -198,7 +244,7 @@ describe("prisma/seed.ts runs against an empty database", () => {
   });
 
   it("creates the starter menu, inventory and recipes", () => {
-    expect(store.menuCategory).toHaveLength(3);
+    expect(store.menuCategory).toHaveLength(5);
     expect(store.menuItem).toHaveLength(7);
     expect(store.inventoryItem).toHaveLength(15);
     expect(store.recipe).toHaveLength(3);

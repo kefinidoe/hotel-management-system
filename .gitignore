@@ -42,5 +42,9 @@ Thumbs.db
 *.zip
 *.rar
 *.7z
-# TypeScript incremental build info (tsconfig has "incremental": true)
+# TypeScript incremental build info (tsconfig has "incremental": true).
+# A glob, not just tsconfig.tsbuildinfo, so any future build-info file is covered.
 *.tsbuildinfo
+
+# Database dumps. These contain real guest data -- never commit them.
+backups/

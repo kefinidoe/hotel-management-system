@@ -2,13 +2,14 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { requireAuth, requireRole } from "@/lib/authz";
+import { requireRole, ROLE_GROUPS } from "@/lib/authz";
 
 export async function GET() {
-  const auth = await requireAuth();
-  if (auth instanceof NextResponse) return auth;
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const rooms = await prisma.room.findMany({
+    where: { isActive: true },
     include: { roomType: true },
     orderBy: { number: "asc" },
   });
@@ -24,7 +25,7 @@ export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const forbidden = requireRole(session, ["ADMIN", "MANAGER", "RECEPTIONIST"]);
+    const forbidden = requireRole(session, ROLE_GROUPS.MANAGEMENT);
   if (forbidden) return forbidden;
 
   const body = await req.json();

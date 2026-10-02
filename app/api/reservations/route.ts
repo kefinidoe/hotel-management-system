@@ -1,13 +1,34 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { rangesOverlap } from "@/lib/dates";
-import { requireAuth, requireRole } from "@/lib/authz";
+import { requireRole, ROLE_GROUPS } from "@/lib/authz";
+import { accommodationRequired, parseMoney, stayNights } from "@/lib/billing";
+import { hasRole } from "@/lib/permissions";
+import { nextReservationCode } from "@/lib/reservation-code";
+import { isMealPlan, isOccupancy, tariffMatches } from "@/lib/tariffs";
+import { blocksGuestPlacement, ROOM_STATUS_LABELS } from "@/lib/room-status";
+
+const BOOKING_SOURCES = ["WALK_IN", "PHONE", "WEBSITE", "OTA", "CORPORATE", "OTHER"] as const;
+
+class ReservationError extends Error {
+  constructor(message: string, readonly status = 400) {
+    super(message);
+  }
+}
+
+function text(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
 
 export async function GET(req: Request) {
-  const auth = await requireAuth();
-  if (auth instanceof NextResponse) return auth;
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const forbidden = requireRole(session, ROLE_GROUPS.GUEST_STAYS);
+  if (forbidden) return forbidden;
 
   const { searchParams } = new URL(req.url);
   const from = searchParams.get("from");
@@ -28,18 +49,18 @@ export async function GET(req: Request) {
   });
 
   return NextResponse.json(
-    reservations.map((r) => ({
-      id: r.id,
-      code: r.code,
-      status: r.status,
-      checkInDate: r.checkInDate.toISOString(),
-      checkOutDate: r.checkOutDate.toISOString(),
-      guestName: r.guest.fullName,
-      guestPhone: r.guest.phone,
-      rooms: r.rooms.map((rr) => ({
-        roomId: rr.roomId,
-        roomNumber: rr.room.number,
-        rate: Number(rr.rate),
+    reservations.map((reservation) => ({
+      id: reservation.id,
+      code: reservation.code,
+      status: reservation.status,
+      checkInDate: reservation.checkInDate.toISOString(),
+      checkOutDate: reservation.checkOutDate.toISOString(),
+      guestName: reservation.guest.fullName,
+      guestPhone: reservation.guest.phone,
+      rooms: reservation.rooms.map((reservationRoom) => ({
+        roomId: reservationRoom.roomId,
+        roomNumber: reservationRoom.room.number,
+        rate: Number(reservationRoom.rate),
       })),
     }))
   );
@@ -49,106 +70,219 @@ export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const forbidden = requireRole(session, ["ADMIN", "MANAGER", "RECEPTIONIST"]);
+  const forbidden = requireRole(session, ROLE_GROUPS.GUEST_STAYS);
   if (forbidden) return forbidden;
 
   const body = await req.json();
-  const {
-    guestName,
-    guestPhone,
-    guestEmail,
-    idNumber,
-    nationality,
-    vehicleRegistration,
-    checkInDate,
-    checkOutDate,
-    roomId,
-    rate,
-    adults,
-    children,
-    source,
-    notes,
-    paymentMode,
-    discount,
-  } = body;
+  const guestName = text(body.guestName);
+  const guestPhone = text(body.guestPhone);
+  const guestEmail = text(body.guestEmail);
+  const idNumber = text(body.idNumber);
+  const nationality = text(body.nationality);
+  const vehicleRegistration = text(body.vehicleRegistration);
+  const roomId = text(body.roomId);
+  const tariffId = text(body.tariffId);
+  const occupancy = isOccupancy(body.occupancy) ? body.occupancy : undefined;
+  const mealPlan = isMealPlan(body.mealPlan) ? body.mealPlan : undefined;
+  const notes = text(body.notes);
 
-  if (!guestName || !checkInDate || !checkOutDate || !roomId || rate === undefined) {
+  if (
+    !guestName ||
+    !body.checkInDate ||
+    !body.checkOutDate ||
+    !roomId ||
+    !tariffId ||
+    !occupancy ||
+    !mealPlan
+  ) {
     return NextResponse.json({ error: "Missing required reservation fields." }, { status: 400 });
   }
 
-  const checkIn = new Date(checkInDate);
-  const checkOut = new Date(checkOutDate);
-  if (checkOut <= checkIn) {
-    return NextResponse.json({ error: "Check-out must be after check-in." }, { status: 400 });
+  const checkIn = new Date(body.checkInDate);
+  const checkOut = new Date(body.checkOutDate);
+  if (!Number.isFinite(checkIn.getTime()) || !Number.isFinite(checkOut.getTime())) {
+    return NextResponse.json({ error: "Enter valid check-in and check-out dates." }, { status: 400 });
   }
 
-  // Prevent double-booking: look at every active reservation on this room and check for overlap.
-  const existing = await prisma.reservationRoom.findMany({
-    where: {
-      roomId,
-      reservation: { status: { notIn: ["CANCELLED", "NO_SHOW"] } },
-    },
-    include: { reservation: true },
-  });
-  const conflict = existing.find((rr) =>
-    rangesOverlap(checkIn, checkOut, rr.reservation.checkInDate, rr.reservation.checkOutDate)
-  );
-  if (conflict) {
+  let discount: number;
+  let nights: number;
+  try {
+    discount = parseMoney(body.discount ?? 0, "Discount", { allowZero: true });
+    nights = stayNights(checkIn, checkOut);
+  } catch (error) {
     return NextResponse.json(
-      { error: `Room is already booked for part of that date range (${conflict.reservation.code}).` },
-      { status: 409 }
+      { error: error instanceof Error ? error.message : "The reservation charges are invalid." },
+      { status: 400 }
     );
   }
 
-  // Find guest by phone, otherwise create a new one. Update any newly-provided
-  // registration details (ID, nationality, vehicle reg) on an existing guest too.
-  let guest = guestPhone
-    ? await prisma.guest.findFirst({ where: { phone: guestPhone } })
-    : null;
-  if (guest) {
-    guest = await prisma.guest.update({
-      where: { id: guest.id },
-      data: {
-        idNumber: idNumber || guest.idNumber,
-        nationality: nationality || guest.nationality,
-        vehicleRegistration: vehicleRegistration || guest.vehicleRegistration,
-        email: guestEmail || guest.email,
-      },
-    });
-  } else {
-    guest = await prisma.guest.create({
-      data: {
-        fullName: guestName,
-        phone: guestPhone || null,
-        email: guestEmail || null,
-        idNumber: idNumber || null,
-        nationality: nationality || null,
-        vehicleRegistration: vehicleRegistration || null,
-      },
-    });
+  if (discount > 0 && !hasRole(session.user.role, ROLE_GROUPS.MANAGEMENT)) {
+    return NextResponse.json(
+      { error: "Only an Admin or Manager can apply an accommodation discount." },
+      { status: 403 }
+    );
   }
 
-  const year = checkIn.getFullYear();
-  const count = await prisma.reservation.count({ where: { code: { startsWith: `RES-${year}-` } } });
-  const code = `RES-${year}-${String(count + 1).padStart(5, "0")}`;
+  const adults = Number(body.adults ?? 1);
+  const children = Number(body.children ?? 0);
+  if (!Number.isInteger(adults) || adults < 1 || !Number.isInteger(children) || children < 0) {
+    return NextResponse.json(
+      { error: "Adults and children must be valid whole numbers." },
+      { status: 400 }
+    );
+  }
 
-  const reservation = await prisma.reservation.create({
-    data: {
-      code,
-      guestId: guest.id,
-      checkInDate: checkIn,
-      checkOutDate: checkOut,
-      status: "CONFIRMED",
-      source: source || "WALK_IN",
-      adults: adults || 1,
-      children: children || 0,
-      paymentMode: paymentMode || null,
-      discount: discount ? Number(discount) : null,
-      notes: notes || null,
-      createdById: session.user.id,
-      rooms: { create: [{ roomId, rate }] },
-    },
-  });
+  const source = BOOKING_SOURCES.find((value) => value === body.source) ?? "WALK_IN";
 
-  return NextResponse.json({ id: reservation.id, code: reservation.code }, { status: 201 });
+  try {
+    const result = await prisma.$transaction(
+      async (tx) => {
+        // Serialize reservation creation across app instances. This protects
+        // both the sequential code and the room-overlap check from races.
+        await tx.$queryRaw<Array<{ locked: string }>>`
+          SELECT pg_advisory_xact_lock(hashtext('axis-hotel-reservation-create'))::text AS locked
+        `;
+
+        const [room, tariff] = await Promise.all([
+          tx.room.findUnique({
+            where: { id: roomId },
+            select: { id: true, number: true, status: true, isActive: true },
+          }),
+          tx.roomType.findUnique({ where: { id: tariffId } }),
+        ]);
+        if (!room) throw new ReservationError("Room not found.", 404);
+        if (!room.isActive) {
+          throw new ReservationError("That room is no longer part of the active hotel inventory.");
+        }
+        if (!tariff) throw new ReservationError("The selected tariff is unavailable.", 404);
+
+        // A stay starting today needs a room that is fit to receive a guest.
+        // For a future booking the status now says nothing about that date, so
+        // that is left to the overlap check below.
+        const startOf = (date: Date) =>
+          new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+        if (startOf(checkIn) === startOf(new Date()) && blocksGuestPlacement(room.status)) {
+          throw new ReservationError(
+            `Room ${room.number} is ${ROOM_STATUS_LABELS[room.status]}. Choose an available room.`
+          );
+        }
+
+        // Every room can be sold as Single, Double or Twin: the occupancy and
+        // meal plan the receptionist chose decide the price, not the room.
+        if (!tariffMatches(tariff.name, tariff.mealPlan, occupancy, mealPlan)) {
+          throw new ReservationError(
+            "The selected tariff does not match the occupancy and meal plan."
+          );
+        }
+
+        let rate: number;
+        try {
+          rate = parseMoney(Number(tariff.baseRate), "Configured nightly rate", {
+            allowZero: true,
+          });
+          accommodationRequired([rate], nights, discount);
+        } catch (error) {
+          throw new ReservationError(
+            error instanceof Error ? error.message : "The configured tariff is invalid."
+          );
+        }
+
+        const existing = await tx.reservationRoom.findMany({
+          where: {
+            roomId,
+            reservation: { status: { notIn: ["CANCELLED", "NO_SHOW"] } },
+          },
+          include: { reservation: true },
+        });
+        const conflict = existing.find((reservationRoom) =>
+          rangesOverlap(
+            checkIn,
+            checkOut,
+            reservationRoom.reservation.checkInDate,
+            reservationRoom.reservation.checkOutDate
+          )
+        );
+        if (conflict) {
+          throw new ReservationError(
+            `Room is already booked for part of that date range (${conflict.reservation.code}).`,
+            409
+          );
+        }
+
+        // Guest and reservation writes share one transaction. If anything
+        // fails, no unused guest record is left behind.
+        const existingGuest = guestPhone
+          ? await tx.guest.findFirst({ where: { phone: guestPhone } })
+          : null;
+        const guest = existingGuest
+          ? await tx.guest.update({
+              where: { id: existingGuest.id },
+              data: {
+                idNumber: idNumber || existingGuest.idNumber,
+                nationality: nationality || existingGuest.nationality,
+                vehicleRegistration: vehicleRegistration || existingGuest.vehicleRegistration,
+                email: guestEmail || existingGuest.email,
+              },
+            })
+          : await tx.guest.create({
+              data: {
+                fullName: guestName,
+                phone: guestPhone || null,
+                email: guestEmail || null,
+                idNumber: idNumber || null,
+                nationality: nationality || null,
+                vehicleRegistration: vehicleRegistration || null,
+              },
+            });
+
+        const year = checkIn.getUTCFullYear();
+        const prefix = `RES-${year}-`;
+        const existingCodes = await tx.reservation.findMany({
+          where: { code: { startsWith: prefix } },
+          select: { code: true },
+        });
+        const code = nextReservationCode(
+          year,
+          existingCodes.map((reservation) => reservation.code)
+        );
+
+        const reservation = await tx.reservation.create({
+          data: {
+            code,
+            guestId: guest.id,
+            checkInDate: checkIn,
+            checkOutDate: checkOut,
+            status: "CONFIRMED",
+            source,
+            adults,
+            children,
+            discount: discount || null,
+            notes: notes || null,
+            createdById: session.user.id,
+            rooms: { create: [{ roomId: room.id, rate }] },
+          },
+        });
+
+        return { id: reservation.id, code: reservation.code };
+      },
+      { timeout: 15_000 }
+    );
+
+    return NextResponse.json(result, { status: 201 });
+  } catch (error) {
+    if (error instanceof ReservationError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      (error.code === "P2002" || error.code === "P2034")
+    ) {
+      return NextResponse.json(
+        { error: "Another reservation was saved at the same time. Please try again." },
+        { status: 409 }
+      );
+    }
+    console.error("Reservation creation failed:", error);
+    return NextResponse.json({ error: "Could not create the reservation." }, { status: 500 });
+  }
 }

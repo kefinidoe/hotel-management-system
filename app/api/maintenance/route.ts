@@ -2,11 +2,14 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/authz";
+import { requireRole, ROLE_GROUPS } from "@/lib/authz";
 
 export async function GET() {
-  const auth = await requireAuth();
-  if (auth instanceof NextResponse) return auth;
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const forbidden = requireRole(session, ROLE_GROUPS.MAINTENANCE);
+  if (forbidden) return forbidden;
 
   const tickets = await prisma.maintenanceTicket.findMany({
     include: { room: true, assignee: true },
@@ -34,11 +37,26 @@ export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-   
+  const forbidden = requireRole(session, ROLE_GROUPS.MAINTENANCE);
+  if (forbidden) return forbidden;
 
   const body = await req.json();
   if (!body.title) {
     return NextResponse.json({ error: "A ticket title is required." }, { status: 400 });
+  }
+
+  const roomId = typeof body.roomId === "string" && body.roomId ? body.roomId : null;
+  if (roomId) {
+    const activeRoom = await prisma.room.findFirst({
+      where: { id: roomId, isActive: true },
+      select: { id: true },
+    });
+    if (!activeRoom) {
+      return NextResponse.json(
+        { error: "That room is no longer part of the active hotel inventory." },
+        { status: 400 }
+      );
+    }
   }
 
   const ticket = await prisma.maintenanceTicket.create({
@@ -46,13 +64,13 @@ export async function POST(req: Request) {
       title: body.title,
       description: body.description || null,
       priority: body.priority || "normal",
-      roomId: body.roomId || null,
+      roomId,
       status: "OPEN",
     },
   });
 
-  if (body.roomId && body.takeOutOfService) {
-    await prisma.room.update({ where: { id: body.roomId }, data: { status: "MAINTENANCE" } });
+  if (roomId && body.takeOutOfService) {
+    await prisma.room.update({ where: { id: roomId }, data: { status: "MAINTENANCE" } });
   }
 
   return NextResponse.json(ticket, { status: 201 });

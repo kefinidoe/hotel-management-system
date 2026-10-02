@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/authz";
+import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
+import { folioTotals } from "@/lib/billing";
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
+  const forbidden = requireRole(auth, ROLE_GROUPS.GUEST_STAYS);
+  if (forbidden) return forbidden;
+
   const guest = await prisma.guest.findUnique({
-    where: { id: params.id },
+    where: { id },
     include: {
       reservations: {
         orderBy: { checkInDate: "desc" },
@@ -15,7 +20,10 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       },
       folios: {
         orderBy: { createdAt: "desc" },
-        include: { items: true, payments: true },
+        include: {
+          items: true,
+          payments: { where: { status: "COMPLETED" } },
+        },
       },
     },
   });
@@ -40,15 +48,17 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       checkOutDate: r.checkOutDate.toISOString(),
       rooms: r.rooms.map((rr) => ({ roomNumber: rr.room.number, rate: Number(rr.rate) })),
     })),
-    folios: guest.folios.map((f) => {
-      const itemsTotal = f.items.reduce((s, i) => s + Number(i.total), 0);
-      const paidTotal = f.payments.reduce((s, p) => s + Number(p.amount), 0);
+    folios: guest.folios.map((folio) => {
+      const totals = folioTotals(
+        folio.items.map((item) => Number(item.total)),
+        folio.payments.map((payment) => Number(payment.amount))
+      );
       return {
-        id: f.id,
-        isClosed: f.isClosed,
-        total: itemsTotal,
-        paid: paidTotal,
-        balance: itemsTotal - paidTotal,
+        id: folio.id,
+        isClosed: folio.isClosed,
+        total: totals.required,
+        paid: totals.paid,
+        balance: totals.balance,
       };
     }),
   });
@@ -57,9 +67,13 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 // Archive or restore a guest. This NEVER deletes anything — it only flips a
 // flag that hides the guest from the default list. Their reservations,
 // folios, and payments are untouched either way, forever.
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+
+  const forbidden = requireRole(auth, ROLE_GROUPS.GUEST_STAYS);
+  if (forbidden) return forbidden;
 
   const body = await req.json();
   if (typeof body.isArchived !== "boolean") {
@@ -69,7 +83,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   // Guard: don't allow archiving a guest who is currently checked in.
   if (body.isArchived) {
     const activeStay = await prisma.reservation.findFirst({
-      where: { guestId: params.id, status: "CHECKED_IN" },
+      where: { guestId: id, status: "CHECKED_IN" },
     });
     if (activeStay) {
       return NextResponse.json(
@@ -80,7 +94,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
 
   const guest = await prisma.guest.update({
-    where: { id: params.id },
+    where: { id },
     data: { isArchived: body.isArchived },
   });
 

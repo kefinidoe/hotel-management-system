@@ -27,12 +27,12 @@ export default async function DashboardPage() {
     arrivalsToday,
     departuresToday,
     revenueAgg,
-    openItemsAgg,
-    openPaymentsAgg,
+    allItemsAgg,
+    allPaymentsAgg,
   ] = await Promise.all([
-    prisma.room.count(),
-    prisma.room.count({ where: { status: "OCCUPIED" } }),
-    prisma.room.count({ where: { status: "AVAILABLE" } }),
+    prisma.room.count({ where: { isActive: true } }),
+    prisma.room.count({ where: { isActive: true, status: "OCCUPIED" } }),
+    prisma.room.count({ where: { isActive: true, status: "AVAILABLE" } }),
     prisma.reservation.count({
       where: { checkInDate: { gte: todayStart, lt: todayEnd }, status: { in: ["CONFIRMED", "PENDING"] } },
     }),
@@ -43,17 +43,17 @@ export default async function DashboardPage() {
       _sum: { amount: true },
       where: { createdAt: { gte: todayStart, lt: todayEnd }, status: "COMPLETED" },
     }),
-    prisma.folioItem.aggregate({ _sum: { total: true }, where: { folio: { isClosed: false } } }),
+    prisma.folioItem.aggregate({ _sum: { total: true } }),
     prisma.payment.aggregate({
       _sum: { amount: true },
-      where: { folio: { isClosed: false }, status: "COMPLETED" },
+      where: { status: "COMPLETED" },
     }),
   ]);
 
   const todaysRevenue = Number(revenueAgg._sum.amount ?? 0);
   const outstandingBalance = Math.max(
     0,
-    Number(openItemsAgg._sum.total ?? 0) - Number(openPaymentsAgg._sum.amount ?? 0)
+    Number(allItemsAgg._sum.total ?? 0) - Number(allPaymentsAgg._sum.amount ?? 0)
   );
   const occupancyPct = totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 100) : 0;
 
@@ -63,7 +63,7 @@ export default async function DashboardPage() {
     { label: "Available Rooms", value: String(availableRooms), sub: `of ${totalRooms} total` },
     { label: "Arrivals", value: String(arrivalsToday), sub: "expected today" },
     { label: "Departures", value: String(departuresToday), sub: "expected today" },
-    { label: "Outstanding Balance", value: `KSh ${outstandingBalance.toLocaleString()}`, sub: "across open folios" },
+    { label: "Outstanding Balance", value: `KSh ${outstandingBalance.toLocaleString()}`, sub: "across all unpaid folios" },
   ];
 
   return (

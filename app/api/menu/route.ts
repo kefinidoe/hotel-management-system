@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/authz";
+import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
 import { computeAvailablePortions } from "@/lib/inventory";
+import { sortMenuCategories } from "@/lib/menu-categories";
 
 export async function GET() {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
+  const forbidden = requireRole(auth, ROLE_GROUPS.RESTAURANT_POS);
+  if (forbidden) return forbidden;
+
   const categories = await prisma.menuCategory.findMany({
+    relationLoadStrategy: "join",
     include: {
       items: {
         where: { isActive: true },
@@ -17,7 +22,7 @@ export async function GET() {
   });
 
   return NextResponse.json(
-    categories.map((c) => ({
+    sortMenuCategories(categories).map((c) => ({
       id: c.id,
       name: c.name,
       items: c.items.map((i) => {
@@ -42,6 +47,9 @@ export async function GET() {
 export async function POST(req: Request) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+
+  const forbidden = requireRole(auth, ROLE_GROUPS.MANAGEMENT);
+  if (forbidden) return forbidden;
 
   const body = await req.json();
   const name = typeof body.name === "string" ? body.name.trim() : "";
