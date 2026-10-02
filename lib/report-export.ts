@@ -292,7 +292,8 @@ export function buildReportsWorkbook(data: ReportExportData) {
       "Phone / Email",
       "Check-in",
       "Check-out",
-      "Rooms",
+      "Room",
+      "Occupancy",
       "Status",
       "Source",
       "Adults",
@@ -311,7 +312,11 @@ export function buildReportsWorkbook(data: ReportExportData) {
       booking.guest.phone ?? booking.guest.email ?? "",
       exportDate(booking.checkInDate),
       exportDate(booking.checkOutDate),
-      booking.rooms.map((room) => `${room.number} (${room.roomType})`).join(", "),
+      // Room number and occupancy are separate columns. A booking can hold more
+      // than one room, so each is a comma-separated list in the same order --
+      // "07, 12" pairs with "Single - Bed Only, Double - Bed Only".
+      booking.rooms.map((room) => room.number).join(", "),
+      booking.rooms.map((room) => room.roomType).join(", "),
       humanize(booking.status),
       humanize(booking.source),
       booking.adults,
@@ -385,7 +390,7 @@ export function buildReportsWorkbook(data: ReportExportData) {
     {
       name: "Booking History",
       rows: bookingRows,
-      widths: [18, 24, 22, 14, 14, 30, 16, 16, 10, 10, 22, 22, 20, 18, 18, 18, 18],
+      widths: [18, 24, 22, 14, 14, 14, 24, 16, 16, 10, 10, 22, 22, 20, 18, 18, 18, 18],
     },
     {
       name: "Restaurant Sales",
