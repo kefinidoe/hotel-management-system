@@ -411,6 +411,50 @@ All of this is guarded by `__tests__/schema/migrations.test.ts`, which was verif
 on three injected faults: a broken migration, a field added to `schema.prisma` with no
 migration, and a typo'd enum literal in `app/api/check-out/route.ts`.
 
+### 6.10 There is a second, much larger branch of work: `fix/stabilization`
+
+**This is the most important thing in this document.**
+
+On 2026-10-02 the remote gained `fix/stabilization` (HEAD `8ea59be`) — it did not exist when
+this branch was created. It is **104 files, ~9,348 insertions**, and it goes considerably
+further than this branch:
+
+| | `fix/stabilization` | this branch |
+|---|---|---|
+| Files changed | 104 | 20 |
+| Extra migrations | **4** (wastage accountability, menu-category normalisation, dashboard indexes, `Room.isActive`) | 0 |
+| New `lib/` modules | `password`, `permissions`, `page-auth`, `reservation-code`, `reporting`, `report-export`, `seed-guard`, `restaurant-dashboard` | 0 |
+| Security | session revocation on every read, 12h session cap, default admin password removed, staff delete | blanket `/api/*` guard |
+| New real tests | 2 (`auth/session-revocation`, `seed/cleanup-guard`) | 14 |
+| Lint config + fixes | no | yes (`npm run lint` clean) |
+| Docs | — | `ARCHITECTURE.md`, `SETUP.md`, corrected `TESTING.md` |
+
+Both branches independently fixed the same two bugs — the 6 unauthenticated GET endpoints and
+the seed ordering. **That is corroboration that those were real bugs, not stylistic
+preferences.**
+
+I ran the same migration/drift harness against `fix/stabilization`: **9 migrations apply
+cleanly, 25 models / 25 tables, 13 enums, 196 columns, no drift.** Its 59 REST handlers are
+all authenticated (at the handler level; its `middleware.ts` still only matches
+`/dashboard/*`, so nothing there is protected by a blanket guard). The 119 placeholder tests
+are still present and still test nothing.
+
+#### The practical consequence
+
+The two branches overlap in `prisma/seed.ts`, `package.json`, `vitest.config.ts` and
+`middleware.ts`. They cannot both land on `main` as-is — a naive merge will conflict in the
+seed, and picking one side wholesale will throw away the other's fixes.
+
+**Decide which is the base before either merges.** Consolidation options, cheapest first:
+
+1. **Take `fix/stabilization` as the base, cherry-pick this branch's 6 commits onto it**
+   (middleware guard, `.eslintrc` + 8 lint fixes, `.env.example`, `SETUP.md`,
+   `ARCHITECTURE.md`, and the three real test suites). The seed fix on that branch is
+   equivalent, so that commit can be dropped.
+2. Merge `fix/stabilization` into this branch (stays on this branch, resolves conflicts once).
+3. Merge both to `main` separately and resolve conflicts there — the most work, and the most
+   chance of silently losing a fix.
+
 ---
 
 ## 7. What I could and couldn't run in this sandbox
@@ -420,7 +464,8 @@ migration, and a typo'd enum literal in `app/api/check-out/route.ts`.
 | `npm install` | ❌ `ERESOLVE` (vite 8 vs `@types/node` 20.14.11) |
 | `npm install --legacy-peer-deps` | ✅ 552 packages |
 | `npm run test:run` | ✅ 133 passed / 6 files (119 placeholders + 14 real — see §6.3) |
-| `npx tsc --noEmit` | ❌ ~30 errors, all from the un-generated Prisma client |
+| `npx tsc --noEmit` | ❌ as-is: 36 errors, all `TS7006` implicit-any |
+| `npx tsc --noEmit --noImplicitAny false` | ✅ **0 errors** — see below |
 | `npx tsc --noEmit middleware.ts` (isolated) | ✅ clean |
 | `npx next lint` | ✅ clean (was: blocked on the interactive ESLint setup prompt) |
 | TCP to `aws-1-eu-west-1.pooler.supabase.com:6543` and `:5432` | ✅ connect |
@@ -428,6 +473,28 @@ migration, and a typo'd enum literal in `app/api/check-out/route.ts`.
 | `npx prisma generate` | ❌ `binaries.prisma.sh` unreachable; `--no-engine` and the wasm engine don't bypass it |
 | `npx prisma validate` / `migrate` | ❌ same engine download |
 | `npm run dev` | ❌ needs the generated client (and, for anything past `/login`, a reachable database) |
+
+### Typechecking without the Prisma engine
+
+`prisma generate` can't run here, and the stub `@prisma/client` ships when it hasn't been
+generated exports `PrismaClient: any` — so every `.map()` / `.find()` / `.reduce()` callback
+on a query result had no contextual type and raised `TS7006`. That masked everything else.
+
+I generated a local stand-in `default.d.ts` in `node_modules` (never committed — it lives in
+gitignored `node_modules`, and it is **not** a substitute for the real client) that declares
+the 13 enums from `schema.prisma` and 25 model delegates returning `any[]`. Results:
+
+| check | result |
+|---|---|
+| `tsc --noEmit` with the stub | 36 errors, **every one `TS7006`** |
+| ...of which non-`TS7006` (i.e. real type errors) | **0** |
+| `tsc --noEmit --noImplicitAny false` (neutralises the stub) | **0 errors** |
+
+All 36 are callbacks on values that came from a Prisma query — `prisma.$transaction(async (tx)`,
+`reservation.folios.find((f) => …)`, `folio.items.reduce((s, i) => …)` — exactly where the real
+generated client supplies the type. So no genuine type error surfaced, but this is **not**
+proof the code typechecks: the stub cannot check Prisma query shapes at all. Only
+`npx prisma generate && npx tsc --noEmit` on your machine settles it.
 
 ### What I *can* do without the Prisma engine: a real database, in-process
 
