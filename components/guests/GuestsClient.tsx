@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Search, X, Archive, RotateCcw } from "lucide-react";
+import { formatDisplayDate } from "@/lib/dates";
 
 type GuestRow = {
   id: string;
@@ -186,8 +187,8 @@ export default function GuestsClient({ initialGuests }: { initialGuests: GuestRo
                           <span className="text-text-secondary">{r.status.replace("_", " ")}</span>
                         </div>
                         <p className="text-text-secondary text-xs mt-0.5">
-                          {new Date(r.checkInDate).toLocaleDateString()} –{" "}
-                          {new Date(r.checkOutDate).toLocaleDateString()}
+                          {formatDisplayDate(r.checkInDate)} –{" "}
+                          {formatDisplayDate(r.checkOutDate)}
                         </p>
                       </div>
                     ))}

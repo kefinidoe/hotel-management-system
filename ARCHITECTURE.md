@@ -439,21 +439,68 @@ all authenticated (at the handler level; its `middleware.ts` still only matches
 `/dashboard/*`, so nothing there is protected by a blanket guard). The 119 placeholder tests
 are still present and still test nothing.
 
-#### The practical consequence
+#### RESOLVED on 2026-10-02 — merged into this branch (`c88f25c`)
 
-The two branches overlap in `prisma/seed.ts`, `package.json`, `vitest.config.ts` and
-`middleware.ts`. They cannot both land on `main` as-is — a naive merge will conflict in the
-seed, and picking one side wholesale will throw away the other's fixes.
+`fix/stabilization` was merged into this branch and is now an **ancestor** of it. Both sets of
+fixes are in one tree: the 12 migrations, the new `lib/` modules, session revocation and the
+front-desk floor board from that branch, plus this branch's blanket `/api/*` guard,
+`.eslintrc.json`, `SETUP.md` and the real test suites. The `middleware.ts` matcher survived the
+merge with both entries (`/dashboard/:path*` and `/api/:path((?!auth/).*)`).
 
-**Decide which is the base before either merges.** Consolidation options, cheapest first:
+Conflict resolution: the 6 API routes took `fix/stabilization` wholesale (this branch's only
+change to them was the auth line, which their versions already had, plus `requireRole`);
+`.gitignore` kept this branch's `*.tsbuildinfo` glob alongside their `backups/`; `.env.example`
+merged both headers after removing a duplicated `DATABASE_URL`/`DIRECT_URL` pair.
 
-1. **Take `fix/stabilization` as the base, cherry-pick this branch's 6 commits onto it**
-   (middleware guard, `.eslintrc` + 8 lint fixes, `.env.example`, `SETUP.md`,
-   `ARCHITECTURE.md`, and the three real test suites). The seed fix on that branch is
-   equivalent, so that commit can be dropped.
-2. Merge `fix/stabilization` into this branch (stays on this branch, resolves conflicts once).
-3. Merge both to `main` separately and resolve conflicts there — the most work, and the most
-   chance of silently losing a fix.
+**Git's auto-merge was silently wrong on `prisma/seed.ts`, and this is worth remembering.**
+It produced *zero conflict markers* yet generated two `const tariffs` declarations in the same
+scope — a `SyntaxError`. Both branches had rewritten the same region, so nothing was flagged.
+
+Worse, the same auto-merge dropped their *semantic* fix without a trace: their step renaming
+the `tariff-triple-*` rows from "Triple" to "Twin" was lost. The tariff ids are legacy, and
+`lib/tariffs.ts` resolves a booking's occupancy by prefix-matching the tariff **name** against
+`Single`/`Double`/`Twin`. Left as merged, a fresh database would have received a tariff named
+**"Triple — Bed Only"**, which no Twin booking can ever match — silently making rooms 27 and 28
+unbookable, with no error anywhere. The rename is now expressed in the tariff rows themselves
+(capacity 2, name `Twin — …`) and the upsert updates `name`, so re-running the seed also repairs
+a database that already has the bad name.
+
+The lesson generalises: **after any merge, read the auto-merged files that both sides touched.**
+A clean `git status` proves nothing about whether the merged code is correct.
+
+Verified after the merge: **199 tests pass**, `npm run lint` is clean, and all **12 migrations
+apply cleanly to an empty database with no schema drift**. A regression test now asserts every
+tariff name matches its occupancy prefix — mutation-tested by reintroducing the bad name and
+confirming the test fails.
+
+Cosmetic leftovers: `fix/stabilization` had committed four `*.patch` files
+(`rooms-final`, `seed-safety`, `session-revocation`, `stabilization-hardening`, ~3,000 lines)
+that duplicate code already in the tree. They're harmless, but they are dead weight.
+
+### 6.11 Dates were rendered in whatever timezone the machine happened to be in — **FIXED**
+
+Eight places rendered a date with a bare `toLocaleDateString()` (no locale, no timezone), so the
+day shown depended on where the code ran. The worst was an API error string quoted back to the
+front desk:
+
+> `Room 12 is booked from 10/2/2026 (RSV-…)`
+
+The three that actually bite are the recorded-at timestamps — expenses, purchases and wastage.
+A charge posted at **01:00 EAT is stored as 22:00 UTC the previous day**, so on any machine set
+to UTC those three files render it under the wrong business day. The five reservation-date sites
+happened to be safe only because `CreateReservationModal` stores them at UTC midnight, which
+lands on the same calendar day in Nairobi.
+
+All eight now use one helper, `formatDisplayDate()` in `lib/dates.ts`, which pins the timezone to
+`HOTEL_TIMEZONE` (`Africa/Nairobi`) and leaves the locale alone — so **the day is fixed without
+changing how anything looks**. The two pre-existing formatters that already pinned the zone
+(`lib/report-export.ts`, `components/reports/ReportsClient.tsx`) now share the same constant, and
+the duplicate definition in `lib/reporting.ts` was collapsed into it.
+
+Covered by 8 tests, including the exact midnight boundary, and mutation-tested: removing the
+timezone pin makes two of them fail.
+
+---
 
 ---
 
@@ -496,6 +543,29 @@ generated client supplies the type. So no genuine type error surfaced, but this 
 proof the code typechecks: the stub cannot check Prisma query shapes at all. Only
 `npx prisma generate && npx tsc --noEmit` on your machine settles it.
 
+**Re-run against the merged tree, and taken further.** With an improved stub (enums declared as
+`const` + union, the way the real generator does it, plus `Prisma.TransactionIsolationLevel` and
+`Prisma.TransactionClient`) the count fell from 213 errors to **16**, and I proved the remaining
+16 are artifacts rather than assuming it. The mechanism, reproduced in isolation:
+
+```
+prisma.menuItem.findMany()          -> any          (stub has no query shapes)
+new Map(items.map((i) => [i.id,i])) -> Map<unknown, unknown>
+.get(...)                           -> unknown
+if (!recipe) continue;              -> narrowed to {}
+recipe.ingredients                  -> "Property 'ingredients' does not exist on type '{}'"
+```
+
+The truthiness check narrows `unknown` to `{}`. With the real client the map is
+`Map<string, MenuItem>` and the property exists. Same for the `{ name: string }` family:
+calling `lib/menu-categories.ts`'s generic `sortMenuCategories<T extends { name: string }>` with
+an `any` argument makes TS fall back to the constraint, so `c.id` "doesn't exist" — verified by
+reproducing that exact error in a 10-line file with no Prisma involved.
+
+So: **16 residual errors, all provably from the missing client, none from the merged code.**
+The conclusion is unchanged — `npx prisma generate && npx tsc --noEmit` on your machine is the
+only thing that closes this.
+
 ### What I *can* do without the Prisma engine: a real database, in-process
 
 `@electric-sql/pglite` is **PostgreSQL compiled to WebAssembly** and installed from npm — so
@@ -527,10 +597,13 @@ the source, plus the greps and commands shown.
    ⬜ `tsc --noEmit` still needs `prisma generate`, which needs network access to
    `binaries.prisma.sh`. Run it on your machine: `npm run prisma:generate && npx tsc --noEmit`.
 
+The consolidation in §6.10 is **done** — `main`, this branch and `fix/stabilization` are one
+tree again, so the work below can proceed on a single base.
+
 **Tier 2 — trust**
-5. Replace the fake tests with real ones: unit-test `lib/dates.ts`, `lib/restaurant.ts`,
-   `lib/inventory.ts` (pure functions, trivial to test), then route-handler tests with a
-   mocked Prisma client, then a real integration suite against a throwaway Postgres.
+5. Replace the fake tests with real ones: unit-test `lib/dates.ts` ✅ (8 tests), then
+   `lib/restaurant.ts`, `lib/inventory.ts` (pure functions, trivial to test), then route-handler
+   tests with a mocked Prisma client, then a real integration suite against a throwaway Postgres.
 6. Add `zod` schemas at the route boundaries (it's already installed).
 7. Make reservation codes collision-proof.
 8. Extract one `computeFolioTotals()` helper and use it in all three places.

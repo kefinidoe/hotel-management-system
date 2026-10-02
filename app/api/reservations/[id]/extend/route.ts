@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { requireRole, ROLE_GROUPS } from "@/lib/authz";
 import { folioTotals, roundMoney, stayNights } from "@/lib/billing";
 import { prisma } from "@/lib/prisma";
+import { formatDisplayDate } from "@/lib/dates";
 
 class ExtensionError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -92,7 +93,7 @@ export async function POST(
         });
         if (conflict) {
           throw new ExtensionError(
-            `Room ${conflict.room.number} is booked from ${conflict.reservation.checkInDate.toLocaleDateString()} (${conflict.reservation.code}).`,
+            `Room ${conflict.room.number} is booked from ${formatDisplayDate(conflict.reservation.checkInDate)} (${conflict.reservation.code}).`,
             409
           );
         }

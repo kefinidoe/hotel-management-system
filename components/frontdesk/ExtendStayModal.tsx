@@ -4,6 +4,7 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import { addDays, isoDay } from "@/lib/dates";
 import { roundMoney, stayNights } from "@/lib/billing";
+import { formatDisplayDate } from "@/lib/dates";
 
 type ExtendableStay = {
   id: string;
@@ -110,7 +111,7 @@ export default function ExtendStayModal({
               className="w-full rounded-control border border-border px-3 py-2 text-sm"
             />
             <p className="text-xs text-text-muted mt-1">
-              Current check-out: {currentCheckOut.toLocaleDateString()}
+              Current check-out: {formatDisplayDate(currentCheckOut)}
             </p>
           </div>
 

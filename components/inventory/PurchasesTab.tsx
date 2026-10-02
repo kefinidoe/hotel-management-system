@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
 import type { InventoryItemRow } from "./InventoryClient";
+import { formatDisplayDate } from "@/lib/dates";
 
 type Purchase = {
   id: string;
@@ -59,7 +60,7 @@ export default function PurchasesTab({
           <tbody>
             {purchases?.map((p) => (
               <tr key={p.id} className="border-b border-border last:border-0">
-                <td className="px-4 py-3 text-text-secondary">{new Date(p.purchaseDate).toLocaleDateString()}</td>
+                <td className="px-4 py-3 text-text-secondary">{formatDisplayDate(p.purchaseDate)}</td>
                 <td className="px-4 py-3 font-medium">{p.itemName}</td>
                 <td className="px-4 py-3">{p.supplier}</td>
                 <td className="px-4 py-3 text-text-secondary">{p.invoiceNumber || "—"}</td>

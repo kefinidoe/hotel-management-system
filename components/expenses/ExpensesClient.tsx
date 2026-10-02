@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Plus, X, Check, XCircle } from "lucide-react";
+import { formatDisplayDate } from "@/lib/dates";
 
 type Expense = {
   id: string;
@@ -103,7 +104,7 @@ export default function ExpensesClient({
             {expenses.map((e) => (
               <tr key={e.id} className="border-b border-border last:border-0">
                 <td className="px-4 py-3 text-text-secondary whitespace-nowrap">
-                  {new Date(e.createdAt).toLocaleDateString()}
+                  {formatDisplayDate(e.createdAt)}
                 </td>
                 <td className="px-4 py-3 font-medium">{e.category}</td>
                 <td className="px-4 py-3 text-text-secondary">{e.description}</td>

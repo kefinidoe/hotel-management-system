@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
 import type { InventoryItemRow } from "./InventoryClient";
+import { formatDisplayDate } from "@/lib/dates";
 
 type WastageRow = {
   id: string;
@@ -78,7 +79,7 @@ export default function WastageTab({
           <tbody>
             {rows?.map((w) => (
               <tr key={w.id} className="border-b border-border last:border-0">
-                <td className="px-4 py-3 text-text-secondary">{new Date(w.createdAt).toLocaleDateString()}</td>
+                <td className="px-4 py-3 text-text-secondary">{formatDisplayDate(w.createdAt)}</td>
                 <td className="px-4 py-3 font-medium">{w.itemName}</td>
                 <td className="px-4 py-3">
                   {w.quantity.toLocaleString()} {w.unit}

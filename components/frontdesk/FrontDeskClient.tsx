@@ -18,6 +18,7 @@ import {
   roomStatusDotClasses,
   summariseRooms,
 } from "@/lib/room-status";
+import { formatDisplayDate } from "@/lib/dates";
 
 type ResRow = {
   id: string;
@@ -323,7 +324,7 @@ export default function FrontDeskClient({
                     <p className="font-semibold truncate">{r.guestName}</p>
                     <p className="text-xs text-text-secondary mt-1">
                       Room {r.roomNumbers} <span className="mx-1">·</span> until{" "}
-                      {new Date(r.checkOutDate).toLocaleDateString()}
+                      {formatDisplayDate(r.checkOutDate)}
                     </p>
                   </div>
                   <span className="shrink-0 rounded-full bg-info/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-info">

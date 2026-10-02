@@ -2,13 +2,8 @@
 
 > ## ⚠️ Read this first — most of what this document claims is not true
 >
-> `npm run test:run` currently reports **133 passing tests**, but only **14** of them
-> execute any real application code — `seed/seed.test.ts` (6),
-> `schema/migrations.test.ts` (4) and `middleware/matcher.test.ts` (4). See "The suites that
-> test real code" below.
->
-> The other **119** tests — `workflows/guest-lifecycle.test.ts`, `api/endpoints.test.ts`
-> and `utilities/helpers.test.ts` — import **nothing** from `app/`, `lib/` or `components/`.
+> `npm run test:run` currently reports **199 passing tests**. **80** of them execute real
+> application code; the other **119** still import nothing from `app/`, `lib/` or `components/`.
 > Verify it yourself:
 >
 > ```bash
@@ -20,13 +15,28 @@
 > ```
 >
 > They assert against object literals written inside the test, so breaking
-> `app/api/check-in/route.ts` leaves all 119 green. **Everything below this box describes
-> the intent of those files, not what they actually verify.** Keep it as a specification of
-> what the real suite should eventually cover.
+> `app/api/check-in/route.ts` leaves all 119 green. **The "Test Coverage" sections below
+> describe the intent of those three files, not what they actually verify.** Keep them as a
+> specification of what the real suite should eventually cover.
 
 ## Overview
-Testing suite for the Hotel Management System: **133 tests**, of which 14 exercise real code
-and 119 are placeholder assertions awaiting replacement.
+Testing suite for the Hotel Management System: **199 tests**, of which **80** exercise real
+code and **119** are placeholder assertions awaiting replacement.
+
+The 80 that test real code, by suite:
+
+| Suite | Tests | What it pins down |
+|---|---|---|
+| `seed/seed.test.ts` | 8 | runs the real `prisma/seed.ts` against a fake Prisma client that enforces P2025 and foreign keys, so seed *ordering* cannot regress; also asserts every tariff name matches its occupancy prefix |
+| `seed/cleanup-guard.test.ts` | 24 | the pure rules deciding whether the destructive placeholder-room cleanup may run |
+| `schema/migrations.test.ts` | 4 | applies all 12 migrations to a real PostgreSQL (PGlite), then diffs the result against `schema.prisma` |
+| `rooms/room-status.test.ts` | 13 | the floor-board status rules |
+| `rooms/tariffs.test.ts` | 12 | tariff matching across occupancy x meal plan |
+| `auth/session-revocation.test.ts` | 7 | session invalidation |
+| `utilities/dates.test.ts` | 8 | timezone-pinned date display, including the midnight boundary |
+| `middleware/matcher.test.ts` | 4 | `middleware.ts` protects both `/dashboard/*` and `/api/*` |
+
+Each of these was mutation-tested: reintroducing the bug it guards makes it fail.
 
 ## Test Framework
 - **Vitest** - Modern, fast test runner with Vue/React support
@@ -39,17 +49,24 @@ and 119 are placeholder assertions awaiting replacement.
 ```
 __tests__/
 ├── seed/
-│   └── seed.test.ts                   # REAL: runs prisma/seed.ts (6 tests)
+│   ├── seed.test.ts                   # REAL: runs prisma/seed.ts (8 tests)
+│   └── cleanup-guard.test.ts          # REAL: destructive-cleanup rules (24 tests)
 ├── schema/
 │   └── migrations.test.ts             # REAL: migrations vs Postgres vs schema.prisma (4 tests)
 ├── middleware/
 │   └── matcher.test.ts                # REAL: verifies middleware.ts matcher (4 tests)
+├── rooms/
+│   ├── room-status.test.ts            # REAL: floor-board rules (13 tests)
+│   └── tariffs.test.ts                # REAL: tariff matching (12 tests)
+├── auth/
+│   └── session-revocation.test.ts     # REAL: session invalidation (7 tests)
 ├── workflows/
 │   └── guest-lifecycle.test.ts        # Full guest lifecycle workflow (36 tests)
 ├── api/
 │   └── endpoints.test.ts              # API endpoint tests (46 tests)
 ├── utilities/
-│   └── helpers.test.ts                # Utility functions & helpers (37 tests)
+│   ├── helpers.test.ts                # PLACEHOLDER: 37 tests, imports nothing real
+│   └── dates.test.ts                  # REAL: timezone-pinned date display (8 tests)
 ├── fixtures/
 │   └── mock-data.ts                   # Mock data for tests
 └── test-utils.tsx                     # Testing utilities & render helpers

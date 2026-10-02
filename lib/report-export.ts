@@ -1,5 +1,6 @@
 import { strToU8, zipSync } from "fflate";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import { HOTEL_TIMEZONE } from "@/lib/dates";
 
 type ReportExportData = {
   range: { startDate: string; endDate: string };
@@ -253,7 +254,7 @@ function workbookFiles(sheets: Sheet[]) {
 
 function exportDate(value: string) {
   return new Date(value).toLocaleDateString("en-CA", {
-    timeZone: "Africa/Nairobi",
+    timeZone: HOTEL_TIMEZONE,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

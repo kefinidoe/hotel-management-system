@@ -1,7 +1,13 @@
+import { HOTEL_TIMEZONE } from "./dates";
+
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const NAIROBI_OFFSET = "+03:00";
 
-export const REPORT_TIME_ZONE = "Africa/Nairobi";
+/**
+ * The hotel's timezone. Re-exported from lib/dates.ts so there is exactly one
+ * definition -- a second copy is a second thing to typo.
+ */
+export const REPORT_TIME_ZONE = HOTEL_TIMEZONE;
 
 export class ReportRangeError extends Error {}
 

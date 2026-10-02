@@ -8,6 +8,7 @@ import {
   STOCK_STATUS_LABEL,
   type StockStatus,
 } from "@/lib/inventory";
+import { HOTEL_TIMEZONE } from "@/lib/dates";
 
 type BookingRow = {
   id: string;
@@ -165,7 +166,7 @@ function formatMoney(value: number) {
 
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("en-KE", {
-    timeZone: "Africa/Nairobi",
+    timeZone: HOTEL_TIMEZONE,
     day: "2-digit",
     month: "short",
     year: "numeric",
