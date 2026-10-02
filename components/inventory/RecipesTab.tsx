@@ -50,7 +50,7 @@ export default function RecipesTab({ inventoryItems }: { inventoryItems: Invento
     <div>
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-text-secondary">
-          Every menu item's ingredient list. Available portions are calculated live from current stock.
+          Every menu item’s ingredient list. Available portions are calculated live from current stock.
         </p>
         <button onClick={() => setCreateOpen(true)} className="btn-primary shrink-0">
           <Plus size={16} /> Create Recipe

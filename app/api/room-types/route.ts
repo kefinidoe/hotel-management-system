@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/authz";
+import { requireAuth, requireRole } from "@/lib/authz";
 
 export async function GET() {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const roomTypes = await prisma.roomType.findMany({ orderBy: { name: "asc" } });
   return NextResponse.json(roomTypes.map((rt) => ({ ...rt, baseRate: Number(rt.baseRate) })));
 }

@@ -1,7 +1,31 @@
 # HMS Testing Documentation
 
+> ## ⚠️ Read this first — most of what this document claims is not true
+>
+> `npm run test:run` currently reports **129 passing tests**, but only **10** of them
+> execute any real application code — `seed/seed.test.ts` (6) and
+> `middleware/matcher.test.ts` (4). See "The suites that test real code" below.
+>
+> The other **119** tests — `workflows/guest-lifecycle.test.ts`, `api/endpoints.test.ts`
+> and `utilities/helpers.test.ts` — import **nothing** from `app/`, `lib/` or `components/`.
+> Verify it yourself:
+>
+> ```bash
+> grep -rEc "from ['\"](@/|\.\./\.\./(app|lib|components))" \
+>   __tests__/workflows/guest-lifecycle.test.ts \
+>   __tests__/api/endpoints.test.ts \
+>   __tests__/utilities/helpers.test.ts
+> # 0  0  0
+> ```
+>
+> They assert against object literals written inside the test, so breaking
+> `app/api/check-in/route.ts` leaves all 119 green. **Everything below this box describes
+> the intent of those files, not what they actually verify.** Keep it as a specification of
+> what the real suite should eventually cover.
+
 ## Overview
-Complete comprehensive testing suite for the Hotel Management System with **119 passing tests** covering full workflow scenarios, API endpoints, utilities, and edge cases.
+Testing suite for the Hotel Management System: **129 tests**, of which 10 exercise real code
+and 119 are placeholder assertions awaiting replacement.
 
 ## Test Framework
 - **Vitest** - Modern, fast test runner with Vue/React support
@@ -13,6 +37,10 @@ Complete comprehensive testing suite for the Hotel Management System with **119 
 
 ```
 __tests__/
+├── seed/
+│   └── seed.test.ts                   # REAL: runs prisma/seed.ts (6 tests)
+├── middleware/
+│   └── matcher.test.ts                # REAL: verifies middleware.ts matcher (4 tests)
 ├── workflows/
 │   └── guest-lifecycle.test.ts        # Full guest lifecycle workflow (36 tests)
 ├── api/
@@ -156,15 +184,38 @@ npm run test:coverage
 ## Test Results Summary
 
 ```
-Test Files  3 passed (3)
-     Tests  119 passed (119)
-  Duration  2.04s (environment 73%, setup 19%, transform 4%)
+Test Files  5 passed (5)
+     Tests  129 passed (129)
+  Duration  ~4.5s (environment ~70%, setup ~18%, transform ~10%)
 ```
 
 ### Breakdown by Module
-- Guest Lifecycle: 36/36 ✅
-- API Endpoints: 46/46 ✅  
-- Utilities & Helpers: 37/37 ✅
+- Seed script (real code, `prisma/seed.ts`): 6/6 ✅
+- Middleware matcher (real code, `middleware.ts`): 4/4 ✅
+- Guest Lifecycle: 36/36 ⚠️ placeholder assertions
+- API Endpoints: 46/46 ⚠️ placeholder assertions
+- Utilities & Helpers: 37/37 ⚠️ placeholder assertions
+
+### The suites that test real code
+
+`__tests__/seed/seed.test.ts` imports `prisma/seed.ts` and runs it end to end against a
+fake Prisma client that rejects an `update` on a missing row (P2025) and a `room.create`
+whose `roomTypeId` doesn't exist. It asserts the admin login, the 6 tariff room types
+(with the Twin rows correctly named and capacity 2), the 26 rooms with only 27 & 28 flagged
+`isTwin`, the 4 payment methods, and the menu / inventory / recipe seed data.
+
+It is a genuine regression guard: run the same harness against the pre-fix seed from git
+and it fails with exactly the error that made `npm run seed` unusable on a fresh database.
+
+```bash
+git show 1fb45bf:prisma/seed.ts   # -> P2025 on roomType "tariff-triple-bo", process.exit(1)
+```
+
+`__tests__/middleware/matcher.test.ts` reads the real `config.matcher` out of `middleware.ts`
+and pushes all 37 API routes, 9 NextAuth endpoints and the public pages through Next's own
+`getPathMatch`. The matcher fails *open* when it is wrong, so this is the only cheap way to
+catch a regression. Restore the pre-fix `middleware.ts` and it reports all 37 API routes as
+unguarded.
 
 ## Key Test Scenarios
 

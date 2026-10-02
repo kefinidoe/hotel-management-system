@@ -116,7 +116,7 @@ export default function SearchBar() {
         <div className="absolute z-20 mt-1 w-full rounded-card border border-border bg-surface shadow-popover max-h-96 overflow-y-auto">
           {!loading && !hasResults && (
             <p className="px-4 py-3 text-sm text-text-secondary">
-              No results for "{query}"
+              No results for “{query}”
             </p>
           )}
 

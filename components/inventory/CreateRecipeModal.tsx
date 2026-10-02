@@ -149,7 +149,7 @@ export default function CreateRecipeModal({
               })}
             </div>
             <p className="text-xs text-text-muted mt-2">
-              Enter quantities in each ingredient's base unit (g, ml, or pcs).
+              Enter quantities in each ingredient’s base unit (g, ml, or pcs).
             </p>
           </div>
 

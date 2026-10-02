@@ -22,31 +22,35 @@ async function main() {
   console.log("  email:    admin@hotel.com");
   console.log("  password: Admin123!");
 
-  // A couple of room types so later steps (rooms, reservations) have something to attach to.
-  const single = await prisma.roomType.upsert({
-    where: { id: "seed-single" },
-    update: {},
-    create: { id: "seed-single", name: "Single", baseRate: 3500, capacity: 1 },
-  });
-
-  const double = await prisma.roomType.upsert({
-    where: { id: "seed-double" },
-    update: {},
-    create: { id: "seed-double", name: "Double", baseRate: 5500, capacity: 2 },
-  });
-
-  await prisma.room.upsert({
-    where: { number: "101" },
-    update: {},
-    create: { number: "101", roomTypeId: single.id },
-  });
-  await prisma.room.upsert({
-    where: { number: "102" },
-    update: {},
-    create: { number: "102", roomTypeId: double.id },
-  });
-
-  console.log("Seeded 2 room types and 2 rooms.");
+  // Axis Hotel Nakuru's real tariff card: occupancy crossed with meal plan.
+  //
+  // This runs FIRST, before anything else touches RoomType: the room-creation
+  // loop below references these ids as foreign keys, and the Twin rename after
+  // the legacy cleanup updates two of these rows. On a fresh database nothing
+  // exists yet, so creating them up front is what makes `npm run seed` work
+  // against an empty schema.
+  const tariffs: {
+    id: string;
+    name: string;
+    baseRate: number;
+    capacity: number;
+    mealPlan: "BED_ONLY" | "BED_AND_BREAKFAST";
+  }[] = [
+    { id: "tariff-single-bo", name: "Single — Bed Only", baseRate: 2000, capacity: 1, mealPlan: "BED_ONLY" },
+    { id: "tariff-single-bb", name: "Single — B&B", baseRate: 2400, capacity: 1, mealPlan: "BED_AND_BREAKFAST" },
+    { id: "tariff-double-bo", name: "Double — Bed Only", baseRate: 2500, capacity: 2, mealPlan: "BED_ONLY" },
+    { id: "tariff-double-bb", name: "Double — B&B", baseRate: 3300, capacity: 2, mealPlan: "BED_AND_BREAKFAST" },
+    { id: "tariff-triple-bo", name: "Twin — Bed Only", baseRate: 3000, capacity: 2, mealPlan: "BED_ONLY" },
+    { id: "tariff-triple-bb", name: "Twin — B&B", baseRate: 3800, capacity: 2, mealPlan: "BED_AND_BREAKFAST" },
+  ];
+  for (const t of tariffs) {
+    await prisma.roomType.upsert({
+      where: { id: t.id },
+      update: { baseRate: t.baseRate, mealPlan: t.mealPlan, capacity: t.capacity, name: t.name },
+      create: t,
+    });
+  }
+  console.log("Seeded the 6 real Axis Hotel tariff room types (Single/Double/Twin x Bed Only/B&B).");
 
   // One-time real-room-list migration: rooms 101/102 were placeholder test
   // rooms with made-up tariffs. Clear anything attached to them, then
@@ -98,17 +102,6 @@ async function main() {
 
   await prisma.roomType.deleteMany({ where: { id: { in: ["seed-single", "seed-double"] } } });
 
-  // Fix the mislabeled tariff: it was seeded as "Triple" (capacity 3), but
-  // it's really the Twin-bed tariff for rooms 27 & 28 (capacity 2).
-  await prisma.roomType.update({
-    where: { id: "tariff-triple-bo" },
-    data: { name: "Twin — Bed Only", capacity: 2 },
-  });
-  await prisma.roomType.update({
-    where: { id: "tariff-triple-bb" },
-    data: { name: "Twin — B&B", capacity: 2 },
-  });
-
   const floors: { prefix: string; numbers: string[]; floor: string }[] = [
     { prefix: "", numbers: ["01", "02", "03", "04", "05", "06", "07", "08"], floor: "1" },
     { prefix: "", numbers: ["21", "22", "23", "24", "25", "26", "27", "28"], floor: "2" },
@@ -144,30 +137,6 @@ async function main() {
     });
   }
   console.log(`Seeded payment methods: ${methods.join(", ")}`);
-
-  // Axis Hotel Nakuru's real tariff card: occupancy crossed with meal plan.
-  const tariffs: {
-    id: string;
-    name: string;
-    baseRate: number;
-    capacity: number;
-    mealPlan: "BED_ONLY" | "BED_AND_BREAKFAST";
-  }[] = [
-    { id: "tariff-single-bo", name: "Single — Bed Only", baseRate: 2000, capacity: 1, mealPlan: "BED_ONLY" },
-    { id: "tariff-single-bb", name: "Single — B&B", baseRate: 2400, capacity: 1, mealPlan: "BED_AND_BREAKFAST" },
-    { id: "tariff-double-bo", name: "Double — Bed Only", baseRate: 2500, capacity: 2, mealPlan: "BED_ONLY" },
-    { id: "tariff-double-bb", name: "Double — B&B", baseRate: 3300, capacity: 2, mealPlan: "BED_AND_BREAKFAST" },
-    { id: "tariff-triple-bo", name: "Triple — Bed Only", baseRate: 3000, capacity: 3, mealPlan: "BED_ONLY" },
-    { id: "tariff-triple-bb", name: "Triple — B&B", baseRate: 3800, capacity: 3, mealPlan: "BED_AND_BREAKFAST" },
-  ];
-  for (const t of tariffs) {
-    await prisma.roomType.upsert({
-      where: { id: t.id },
-      update: { baseRate: t.baseRate, mealPlan: t.mealPlan, capacity: t.capacity },
-      create: t,
-    });
-  }
-  console.log("Seeded the 6 real Axis Hotel tariff room types (Single/Double/Triple x Bed Only/B&B).");
 
   // A small starter menu so the Restaurant POS has something to sell.
   const menu: Record<string, { name: string; price: number }[]> = {

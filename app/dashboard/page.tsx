@@ -70,7 +70,7 @@ export default async function DashboardPage() {
     <div>
       <h1>Good day, {firstName}</h1>
       <p className="text-text-secondary text-sm mt-1">
-        Here's what's happening at your hotel today.
+        Here’s what’s happening at your hotel today.
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
@@ -87,7 +87,7 @@ export default async function DashboardPage() {
         <div className="card mt-6">
           <p className="text-sm text-text-secondary">
             No rooms yet — head to the <strong>Rooms</strong> page in the sidebar to add your
-            hotel's rooms and room types, then create reservations from the{" "}
+            hotel’s rooms and room types, then create reservations from the{" "}
             <strong>Reservations</strong> calendar.
           </p>
         </div>

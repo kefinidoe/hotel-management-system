@@ -69,7 +69,7 @@ export default function StaffClient({
         <div>
           <h1>Staff</h1>
           <p className="text-text-secondary text-sm mt-1">
-            Everyone with access to this system, and what they're allowed to do.
+            Everyone with access to this system, and what they’re allowed to do.
           </p>
         </div>
         {isAdmin && (

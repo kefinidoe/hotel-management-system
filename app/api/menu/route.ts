@@ -4,6 +4,9 @@ import { requireAuth } from "@/lib/authz";
 import { computeAvailablePortions } from "@/lib/inventory";
 
 export async function GET() {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const categories = await prisma.menuCategory.findMany({
     include: {
       items: {
