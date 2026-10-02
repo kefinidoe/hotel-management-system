@@ -1,0 +1,143 @@
+diff --git a/__tests__/auth/session-revocation.test.ts b/__tests__/auth/session-revocation.test.ts
+new file mode 100644
+index 0000000..b3c3580
+--- /dev/null
++++ b/__tests__/auth/session-revocation.test.ts
+@@ -0,0 +1,70 @@
++import { describe, it, expect, vi } from 'vitest';
++
++/**
++ * Session revocation tests.
++ *
++ * A JWT session carries whatever it was issued with, so these tests lock in the
++ * rule that every session read re-checks the account in the database. Without
++ * this, deactivating a staff member does not take effect until their token
++ * expires -- which used to be 30 days.
++ *
++ * Note: implementations are set per test with ...Once. Using beforeEach +
++ * mockReset() here makes Vitest 5 misfile a caught error from the mock as a
++ * test failure, even though the callback handles it correctly.
++ */
++
++const { findUnique } = vi.hoisted(() => ({ findUnique: vi.fn() }));
++vi.mock('@/lib/prisma', () => ({ prisma: { user: { findUnique } } }));
++
++import { authOptions } from '@/lib/auth';
++
++const session = () => ({
++  user: { name: 'A Staffer', email: 'staff@test.local', id: '', role: 'RECEPTIONIST' as const },
++  expires: new Date(Date.now() + 3600_000).toISOString(),
++});
++
++const token = () => ({ id: 'user_1', role: 'RECEPTIONIST' as const, name: 'A Staffer', email: 'staff@test.local' });
++
++const readSession = () =>
++  (authOptions.callbacks!.session as any)({ session: session(), token: token() });
++
++describe('session revocation', () => {
++  it('returns a session for an active account', async () => {
++    findUnique.mockResolvedValueOnce({ isActive: true, role: 'RECEPTIONIST' });
++    await expect(readSession()).resolves.toMatchObject({ user: { id: 'user_1' } });
++  });
++
++  it('blocks a deactivated account on its next request', async () => {
++    findUnique.mockResolvedValueOnce({ isActive: false, role: 'RECEPTIONIST' });
++    await expect(readSession()).resolves.toBeNull();
++  });
++
++  it('blocks an account that no longer exists', async () => {
++    findUnique.mockResolvedValueOnce(null);
++    await expect(readSession()).resolves.toBeNull();
++  });
++
++  it('blocks a token that carries no user id', async () => {
++    const s = await (authOptions.callbacks!.session as any)({ session: session(), token: { role: 'ADMIN' } });
++    expect(s).toBeNull();
++  });
++
++  it('uses the role from the database, not the role baked into the token', async () => {
++    findUnique.mockResolvedValueOnce({ isActive: true, role: 'WAITER' });
++    const s = await readSession();
++    expect(s.user.role).toBe('WAITER');
++  });
++
++  it('keeps the session when the database is briefly unreachable', async () => {
++    findUnique.mockImplementationOnce(() => {
++      throw new Error('connection lost');
++    });
++    const s = await readSession();
++    expect(s).not.toBeNull();
++    expect(s.user.role).toBe('RECEPTIONIST');
++  });
++
++  it('caps the session lifetime below the 30-day default', () => {
++    expect(authOptions.session?.maxAge).toBeLessThanOrEqual(24 * 60 * 60);
++  });
++});
+diff --git a/lib/auth.ts b/lib/auth.ts
+index 767d062..7d1db0c 100644
+--- a/lib/auth.ts
++++ b/lib/auth.ts
+@@ -4,7 +4,13 @@ import bcrypt from "bcryptjs";
+ import { prisma } from "@/lib/prisma";
+ 
+ export const authOptions: NextAuthOptions = {
+-  session: { strategy: "jwt" },
++  // Sessions are JWTs. Left at the default they last 30 days, which means a
++  // staff member who leaves -- or one you deactivate -- keeps working access for
++  // up to a month. 12 hours covers even a long shift, and updateAge keeps the
++  // clock sliding while they are actually working, so nobody is signed out
++  // mid-shift. This is the second line of defence; the re-check in the session
++  // callback below is the first.
++  session: { strategy: "jwt", maxAge: 12 * 60 * 60, updateAge: 60 * 60 },
+   pages: { signIn: "/login" },
+   providers: [
+     CredentialsProvider({
+@@ -47,10 +53,44 @@ export const authOptions: NextAuthOptions = {
+       return token;
+     },
+     async session({ session, token }) {
+-      if (session.user) {
+-        (session.user as any).id = token.id;
+-        (session.user as any).role = token.role;
++      if (!session.user) return session;
++
++      // Re-check the account against the database every time a session is read.
++      //
++      // A JWT carries whatever it was issued with, so without this a staff
++      // member who has been deactivated (or demoted) keeps their old access
++      // until the token expires. Because this runs on every getServerSession()
++      // call, deactivating someone takes effect on their very next request --
++      // not in 30 days.
++      //
++      // Returning null here ends the session: getServerSession() yields null, so
++      // every `if (!session)` check in the app treats them as signed out, and the
++      // browser sees an unauthenticated session too.
++      // A token carrying no user id cannot belong to a real account.
++      if (!token.id) return null as unknown as typeof session;
++
++      try {
++        const user = await prisma.user.findUnique({
++          where: { id: token.id },
++          select: { isActive: true, role: true },
++        });
++
++        if (!user || !user.isActive) {
++          return null as unknown as typeof session;
++        }
++
++        // Use the role from the database, so a role change takes effect on the
++        // next request instead of at the next sign-in.
++        session.user.id = token.id;
++        session.user.role = user.role;
++      } catch {
++        // Temporary database problem: fall back to the token's own values rather
++        // than signing the whole hotel out. Every route still requires a valid,
++        // signed session, and the route's own queries will surface the outage.
++        session.user.id = token.id;
++        session.user.role = token.role;
+       }
++
+       return session;
+     },
+   },

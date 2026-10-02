@@ -47,9 +47,50 @@ export function sanitiseForPgTools(rawUrl) {
   return url.toString();
 }
 
+/**
+ * Which database is this, really?
+ *
+ * Two Supabase projects in the same region share one pooler hostname, and the same
+ * project can be reached through two different endpoints (the direct host and the
+ * pooler). So host and port alone are not enough to tell databases apart - and
+ * getting this wrong means either refusing a legitimate restore or, far worse,
+ * overwriting the live hotel database.
+ *
+ * The project reference is the reliable identifier. Supabase puts it in the pooler
+ * username (`postgres.<ref>`) and in the direct hostname (`db.<ref>.supabase.co`),
+ * so it survives both endpoints. It is not a secret.
+ */
+function supabaseRef(url) {
+  const parsed = new URL(url);
+  const direct = parsed.hostname.match(/^db\.([a-z0-9]+)\.supabase\.(co|in)$/i);
+  if (direct) return direct[1];
+  const pooled = parsed.username.match(/^postgres\.([a-z0-9]+)$/i);
+  if (pooled && /(^|\.)pooler\.supabase\.com$/i.test(parsed.hostname)) return pooled[1];
+  return null;
+}
+
 function identity(url) {
   const parsed = new URL(url);
-  return `${parsed.hostname}:${parsed.port || 5432}${parsed.pathname}`;
+  const user = parsed.username ? `${parsed.username}@` : "";
+  return `${user}${parsed.hostname}:${parsed.port || 5432}${parsed.pathname}`;
+}
+
+function isSupabaseHost(url) {
+  return /(^|\.)supabase\.(co|in|com)$/i.test(new URL(url).hostname);
+}
+
+function sameDatabase(a, b) {
+  const refA = supabaseRef(a);
+  const refB = supabaseRef(b);
+  if (refA && refB) return refA === refB;
+
+  // Both sides are Supabase but at least one project reference could not be read
+  // (an unusual pooler username, say). Two endpoints can point at one project, so
+  // assume they are the same and make --force the explicit way through. Refusing
+  // a legitimate restore is a nuisance; overwriting the hotel's books is not.
+  if (isSupabaseHost(a) && isSupabaseHost(b)) return true;
+
+  return identity(a) === identity(b);
 }
 
 function run(command, args) {
@@ -97,10 +138,10 @@ async function main() {
   }
 
   const live = env.DIRECT_URL ?? env.DATABASE_URL;
-  if (live && identity(live) === identity(target) && !hasFlag("force")) {
+  if (live && sameDatabase(live, target) && !hasFlag("force")) {
     console.error("");
     console.error("  REFUSING TO RUN.");
-    console.error(`  That target is the database this app is configured to use (${identity(live)}).`);
+    console.error(`  That target appears to be the database this app is configured to use (${identity(live)}).`);
     console.error("  Restoring replaces its contents with the contents of the backup.");
     console.error("");
     console.error("  If that is genuinely what you want, re-run with --force.");

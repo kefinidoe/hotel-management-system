@@ -41,4 +41,6 @@ Thumbs.db
 # Archives
 *.zip
 *.rar
-*.7ztsconfig.tsbuildinfo
+*.7z
+tsconfig.tsbuildinfo
+backups/

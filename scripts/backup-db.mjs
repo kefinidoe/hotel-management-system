@@ -199,9 +199,16 @@ async function main() {
   console.log(`  Done. ${dumps.length - removed.length} backup(s) in ${outDir}`);
   console.log("");
 
-  // Remind loudly if the backups are not being copied off this machine.
-  console.log("  A backup that lives only on this PC is not a real backup.");
-  console.log("  Point --out at a OneDrive or Google Drive folder so a copy leaves the building.");
+  // Say whether the golden rule is actually met. A dump sitting inside the
+  // project folder dies with this PC; one in a synced folder leaves the building.
+  const CLOUD_SYNC = /onedrive|dropbox|google ?drive|icloud|sharepoint|box\.com|mega\.nz|pcloud/i;
+  if (CLOUD_SYNC.test(outDir)) {
+    console.log("  Stored in a cloud-synced folder, so a copy leaves this PC.");
+    console.log("  Make sure the sync has finished before you rely on it.");
+  } else {
+    console.log("  A backup that lives only on this PC is not a real backup.");
+    console.log("  Point --out at a OneDrive or Google Drive folder so a copy leaves the building.");
+  }
   console.log("");
 }
 

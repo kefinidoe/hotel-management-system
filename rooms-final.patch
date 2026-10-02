@@ -1,0 +1,1438 @@
+diff --git a/__tests__/rooms/room-status.test.ts b/__tests__/rooms/room-status.test.ts
+new file mode 100644
+index 0000000..959e7f0
+--- /dev/null
++++ b/__tests__/rooms/room-status.test.ts
+@@ -0,0 +1,96 @@
++import { describe, it, expect } from 'vitest';
++import type { RoomStatus } from '@prisma/client';
++import {
++  isBookableToday,
++  notBookableReason,
++  ROOM_STATUSES,
++  ROOM_STATUS_LABELS,
++  roomStatusClasses,
++  roomStatusRank,
++  summariseRooms,
++} from '@/lib/room-status';
++
++/**
++ * The receptionist decides which room to give a guest from what this module
++ * says. Two rules matter more than the rest:
++ *
++ *   1. Every status is shown as a word, never as a colour alone.
++ *   2. A room that is dirty, occupied or broken is never offered as bookable.
++ */
++
++const ALL: RoomStatus[] = [
++  'AVAILABLE',
++  'RESERVED',
++  'OCCUPIED',
++  'DIRTY',
++  'CLEANING',
++  'READY',
++  'MAINTENANCE',
++  'OUT_OF_ORDER',
++];
++
++describe('room status', () => {
++  it('knows about every status the database can hold', () => {
++    expect([...ROOM_STATUSES].sort()).toEqual([...ALL].sort());
++  });
++
++  it('describes every status in words, not enum codes', () => {
++    for (const status of ALL) {
++      const label = ROOM_STATUS_LABELS[status];
++      expect(label).toBeTruthy();
++      expect(label).not.toContain('_');
++      expect(label).not.toBe(status);
++    }
++  });
++
++  it('says why a room cannot be used, in plain words', () => {
++    expect(notBookableReason('DIRTY')).toBe('Needs cleaning first.');
++    expect(notBookableReason('OCCUPIED')).toBe('A guest is in this room.');
++    expect(notBookableReason('MAINTENANCE')).toBe('Under maintenance.');
++    expect(notBookableReason('OUT_OF_ORDER')).toBe('Out of order.');
++    expect(notBookableReason('AVAILABLE')).toBe('');
++  });
++
++  describe('isBookableToday', () => {
++    it('offers only free and clean rooms', () => {
++      expect(isBookableToday('AVAILABLE')).toBe(true);
++      expect(isBookableToday('READY')).toBe(true);
++    });
++
++    it.each<RoomStatus>(['RESERVED', 'OCCUPIED', 'DIRTY', 'CLEANING', 'MAINTENANCE', 'OUT_OF_ORDER'])(
++      'never offers a %s room',
++      (status) => {
++        expect(isBookableToday(status)).toBe(false);
++      }
++    );
++  });
++
++  it('gives every status a colour class, so the words always have a second cue', () => {
++    for (const status of ALL) {
++      expect(roomStatusClasses(status)).toMatch(/bg-/);
++    }
++  });
++
++  it('sorts bookable rooms first and out-of-service rooms last', () => {
++    expect(roomStatusRank('AVAILABLE')).toBeLessThan(roomStatusRank('DIRTY'));
++    expect(roomStatusRank('DIRTY')).toBeLessThan(roomStatusRank('MAINTENANCE'));
++    expect(roomStatusRank('OUT_OF_ORDER')).toBeGreaterThan(roomStatusRank('MAINTENANCE'));
++  });
++
++  describe('summariseRooms', () => {
++    it('counts what is free and clean for the board summary', () => {
++      const summary = summariseRooms([
++        { status: 'AVAILABLE' as RoomStatus },
++        { status: 'READY' as RoomStatus },
++        { status: 'DIRTY' as RoomStatus },
++        { status: 'OCCUPIED' as RoomStatus },
++        { status: 'DIRTY' as RoomStatus },
++      ]);
++
++      expect(summary.total).toBe(5);
++      expect(summary.bookable).toBe(2);
++      expect(summary.counts.get('DIRTY')).toBe(2);
++      expect(summary.counts.get('AVAILABLE')).toBe(1);
++    });
++  });
++});
+diff --git a/__tests__/rooms/tariffs.test.ts b/__tests__/rooms/tariffs.test.ts
+new file mode 100644
+index 0000000..f3f1a82
+--- /dev/null
++++ b/__tests__/rooms/tariffs.test.ts
+@@ -0,0 +1,85 @@
++import { describe, it, expect } from 'vitest';
++import {
++  findTariff,
++  MEAL_PLANS,
++  OCCUPANCIES,
++  tariffCategory,
++  tariffMatches,
++} from '@/lib/tariffs';
++
++/**
++ * Twin is now an occupancy any room can be sold at, and Half Board is a meal
++ * plan the hotel sells. These tests pin the rules that price a booking, because
++ * the API refuses anything that does not match.
++ */
++
++// The nine tariffs the seed creates.
++const TARIFFS = [
++  { id: 'tariff-single-bo', name: 'Single — Bed Only', mealPlan: 'BED_ONLY' },
++  { id: 'tariff-single-bb', name: 'Single — B&B', mealPlan: 'BED_AND_BREAKFAST' },
++  { id: 'tariff-single-hb', name: 'Single — Half Board', mealPlan: 'HALF_BOARD' },
++  { id: 'tariff-double-bo', name: 'Double — Bed Only', mealPlan: 'BED_ONLY' },
++  { id: 'tariff-double-bb', name: 'Double — B&B', mealPlan: 'BED_AND_BREAKFAST' },
++  { id: 'tariff-double-hb', name: 'Double — Half Board', mealPlan: 'HALF_BOARD' },
++  { id: 'tariff-triple-bo', name: 'Twin — Bed Only', mealPlan: 'BED_ONLY' },
++  { id: 'tariff-triple-bb', name: 'Twin — B&B', mealPlan: 'BED_AND_BREAKFAST' },
++  { id: 'tariff-triple-hb', name: 'Twin — Half Board', mealPlan: 'HALF_BOARD' },
++];
++
++describe('occupancy and meal plans', () => {
++  it('offers twin as an occupancy alongside single and double', () => {
++    expect(OCCUPANCIES).toEqual(['SINGLE', 'DOUBLE', 'TWIN']);
++  });
++
++  it('offers half board alongside bed only and bed & breakfast', () => {
++    expect(MEAL_PLANS).toEqual(['BED_ONLY', 'BED_AND_BREAKFAST', 'HALF_BOARD']);
++  });
++
++  it.each([
++    ['SINGLE', 'Single'],
++    ['DOUBLE', 'Double'],
++    ['TWIN', 'Twin'],
++  ] as const)('prices %s bookings from the %s tariff family', (occupancy, category) => {
++    expect(tariffCategory(occupancy)).toBe(category);
++  });
++});
++
++describe('tariff matching', () => {
++  it('matches every occupancy and meal plan to exactly one tariff', () => {
++    for (const occupancy of OCCUPANCIES) {
++      for (const mealPlan of MEAL_PLANS) {
++        const matches = TARIFFS.filter((tariff) =>
++          tariffMatches(tariff.name, tariff.mealPlan, occupancy, mealPlan)
++        );
++        expect(matches).toHaveLength(1);
++      }
++    }
++  });
++
++  it('prices a twin half-board booking from the twin half-board tariff', () => {
++    expect(findTariff(TARIFFS, 'TWIN', 'HALF_BOARD')?.id).toBe('tariff-triple-hb');
++  });
++
++  it('prices a single half-board booking from the single half-board tariff', () => {
++    expect(findTariff(TARIFFS, 'SINGLE', 'HALF_BOARD')?.id).toBe('tariff-single-hb');
++  });
++
++  it('refuses a tariff whose meal plan is wrong for the booking', () => {
++    expect(tariffMatches('Double — Bed Only', 'BED_ONLY', 'DOUBLE', 'HALF_BOARD')).toBe(false);
++  });
++
++  it('refuses a tariff from the wrong occupancy family', () => {
++    expect(tariffMatches('Single — Half Board', 'HALF_BOARD', 'DOUBLE', 'HALF_BOARD')).toBe(false);
++  });
++
++  it('does not accept a tariff that has no meal plan set', () => {
++    // A room type added from the Rooms screen with no meal plan can never price
++    // a booking; matching must not fall back to it silently.
++    expect(tariffMatches('Single', null, 'SINGLE', 'BED_ONLY')).toBe(false);
++  });
++
++  it('finds nothing when the hotel has not set up that combination', () => {
++    const onlyBedOnly = TARIFFS.filter((tariff) => tariff.mealPlan === 'BED_ONLY');
++    expect(findTariff(onlyBedOnly, 'DOUBLE', 'HALF_BOARD')).toBeUndefined();
++  });
++});
+diff --git a/app/api/check-in/route.ts b/app/api/check-in/route.ts
+index bed2893..f999cd9 100644
+--- a/app/api/check-in/route.ts
++++ b/app/api/check-in/route.ts
+@@ -4,6 +4,8 @@ import { Prisma } from "@prisma/client";
+ import { authOptions } from "@/lib/auth";
+ import { prisma } from "@/lib/prisma";
+ import { requireRole, ROLE_GROUPS } from "@/lib/authz";
++import { rangesOverlap } from "@/lib/dates";
++import { blocksGuestPlacement, isBookableToday, ROOM_STATUS_LABELS } from "@/lib/room-status";
+ import {
+   accommodationRequired,
+   parseMoney,
+@@ -44,6 +46,10 @@ export async function POST(req: Request) {
+     typeof body.paymentMethodId === "string" ? body.paymentMethodId.trim() : "";
+   const reference = typeof body.reference === "string" ? body.reference.trim() : "";
+ 
++  // Optional: the receptionist moved the guest to a different room because the
++  // reserved one is dirty, under maintenance, or otherwise unusable.
++  const newRoomId = typeof body.newRoomId === "string" ? body.newRoomId.trim() : "";
++
+   try {
+     const result = await prisma.$transaction(
+       async (tx) => {
+@@ -62,6 +68,75 @@ export async function POST(req: Request) {
+           throw new CheckInError("This reservation already has a folio and cannot be checked in again.");
+         }
+ 
++        if (newRoomId && reservation.rooms.length > 1) {
++          throw new CheckInError(
++            "This reservation holds more than one room. Change rooms from the reservation instead."
++          );
++        }
++
++        // Room change: only into a room that is free and clean, never into one
++        // that is occupied, dirty or under maintenance.
++        let assignedRoom: { id: string; number: string } | null =
++          reservation.rooms[0]?.room ?? null;
++        if (newRoomId && newRoomId !== assignedRoom?.id) {
++          const target = await tx.room.findUnique({
++            where: { id: newRoomId },
++            select: { id: true, number: true, status: true, isActive: true },
++          });
++          if (!target) throw new CheckInError("The room you selected was not found.", 404);
++          if (!target.isActive) {
++            throw new CheckInError(
++              `Room ${target.number} is no longer part of the hotel's active rooms. Choose another.`
++            );
++          }
++          if (!isBookableToday(target.status)) {
++            throw new CheckInError(
++              `Room ${target.number} is ${ROOM_STATUS_LABELS[target.status]}. Choose an available room.`
++            );
++          }
++
++          const otherStays = await tx.reservationRoom.findMany({
++            where: {
++              roomId: target.id,
++              reservation: { status: { notIn: ["CANCELLED", "NO_SHOW"] }, id: { not: reservation.id } },
++            },
++            include: { reservation: true },
++          });
++          const clash = otherStays.find((stay) =>
++            rangesOverlap(
++              reservation.checkInDate,
++              reservation.checkOutDate,
++              stay.reservation.checkInDate,
++              stay.reservation.checkOutDate
++            )
++          );
++          if (clash) {
++            throw new CheckInError(
++              `Room ${target.number} is already booked for these dates. Choose another room.`
++            );
++          }
++
++          await tx.reservationRoom.update({
++            where: { id: reservation.rooms[0].id },
++            data: { roomId: target.id },
++          });
++          assignedRoom = { id: target.id, number: target.number };
++        }
++
++        // The guest cannot be put into a room that is unfit, even if the client
++        // that sent this request would have allowed it.
++        if (assignedRoom) {
++          const current = await tx.room.findUnique({
++            where: { id: assignedRoom.id },
++            select: { status: true, number: true },
++          });
++          if (current && newRoomId === "" && blocksGuestPlacement(current.status)) {
++            throw new CheckInError(
++              `Room ${current.number} is ${ROOM_STATUS_LABELS[current.status]}. Choose an available room, or ask housekeeping to finish it first.`
++            );
++          }
++        }
++
+         let nights: number;
+         let required: number;
+         const discount = Number(reservation.discount ?? 0);
+@@ -99,11 +174,15 @@ export async function POST(req: Request) {
+ 
+         for (const reservationRoom of reservation.rooms) {
+           const unitPrice = Number(reservationRoom.rate);
++          const roomNumber =
++            assignedRoom && reservationRoom.roomId === reservation.rooms[0]?.roomId
++              ? assignedRoom.number
++              : reservationRoom.room.number;
+           await tx.folioItem.create({
+             data: {
+               folioId: folio.id,
+               type: "ROOM_CHARGE",
+-              description: `Room ${reservationRoom.room.number} — ${nights} night(s)`,
++              description: `Room ${roomNumber} — ${nights} night(s)`,
+               quantity: nights,
+               unitPrice,
+               taxRate: 0,
+@@ -148,8 +227,12 @@ export async function POST(req: Request) {
+         });
+ 
+         for (const reservationRoom of reservation.rooms) {
++          const roomId =
++            assignedRoom && reservationRoom.roomId === reservation.rooms[0]?.roomId
++              ? assignedRoom.id
++              : reservationRoom.roomId;
+           await tx.room.update({
+-            where: { id: reservationRoom.roomId },
++            where: { id: roomId },
+             data: { status: "OCCUPIED" },
+           });
+         }
+diff --git a/app/api/reservations/[id]/route.ts b/app/api/reservations/[id]/route.ts
+index b7c80ea..7b1c35d 100644
+--- a/app/api/reservations/[id]/route.ts
++++ b/app/api/reservations/[id]/route.ts
+@@ -135,17 +135,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
+ 
+           const targetRoom = await tx.room.findUnique({
+             where: { id: roomId },
+-            select: { id: true, number: true, isTwin: true, isActive: true },
++            select: { id: true, number: true, isActive: true },
+           });
+           if (!targetRoom) throw new ReservationUpdateError("Room not found.", 404);
+           if (!targetRoom.isActive) {
+             throw new ReservationUpdateError("That room is no longer part of the active hotel inventory.");
+           }
+-          if (targetRoom.isTwin !== reservation.rooms[0].room.isTwin) {
+-            throw new ReservationUpdateError(
+-              "A reservation cannot move between Twin and Single/Double rooms without creating a new correctly priced reservation."
+-            );
+-          }
++          // Any room can take any reservation now: the occupancy and meal plan
++          // chosen at booking set the price, not the room.
+ 
+           const existing = await tx.reservationRoom.findMany({
+             where: {
+diff --git a/app/api/reservations/route.ts b/app/api/reservations/route.ts
+index 2ead969..16e0775 100644
+--- a/app/api/reservations/route.ts
++++ b/app/api/reservations/route.ts
+@@ -8,10 +8,10 @@ import { requireRole, ROLE_GROUPS } from "@/lib/authz";
+ import { accommodationRequired, parseMoney, stayNights } from "@/lib/billing";
+ import { hasRole } from "@/lib/permissions";
+ import { nextReservationCode } from "@/lib/reservation-code";
++import { isMealPlan, isOccupancy, tariffMatches } from "@/lib/tariffs";
++import { blocksGuestPlacement, ROOM_STATUS_LABELS } from "@/lib/room-status";
+ 
+ const BOOKING_SOURCES = ["WALK_IN", "PHONE", "WEBSITE", "OTA", "CORPORATE", "OTHER"] as const;
+-const OCCUPANCIES = ["SINGLE", "DOUBLE", "TWIN"] as const;
+-const MEAL_PLANS = ["BED_ONLY", "BED_AND_BREAKFAST"] as const;
+ 
+ class ReservationError extends Error {
+   constructor(message: string, readonly status = 400) {
+@@ -82,8 +82,8 @@ export async function POST(req: Request) {
+   const vehicleRegistration = text(body.vehicleRegistration);
+   const roomId = text(body.roomId);
+   const tariffId = text(body.tariffId);
+-  const occupancy = OCCUPANCIES.find((value) => value === body.occupancy);
+-  const mealPlan = MEAL_PLANS.find((value) => value === body.mealPlan);
++  const occupancy = isOccupancy(body.occupancy) ? body.occupancy : undefined;
++  const mealPlan = isMealPlan(body.mealPlan) ? body.mealPlan : undefined;
+   const notes = text(body.notes);
+ 
+   if (
+@@ -146,7 +146,7 @@ export async function POST(req: Request) {
+         const [room, tariff] = await Promise.all([
+           tx.room.findUnique({
+             where: { id: roomId },
+-            select: { id: true, isTwin: true, isActive: true },
++            select: { id: true, number: true, status: true, isActive: true },
+           }),
+           tx.roomType.findUnique({ where: { id: tariffId } }),
+         ]);
+@@ -156,21 +156,22 @@ export async function POST(req: Request) {
+         }
+         if (!tariff) throw new ReservationError("The selected tariff is unavailable.", 404);
+ 
+-        if ((room.isTwin && occupancy !== "TWIN") || (!room.isTwin && occupancy === "TWIN")) {
+-          throw new ReservationError("That occupancy option is not available for the selected room.");
++        // A stay starting today needs a room that is fit to receive a guest.
++        // For a future booking the status now says nothing about that date, so
++        // that is left to the overlap check below.
++        const startOf = (date: Date) =>
++          new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
++        if (startOf(checkIn) === startOf(new Date()) && blocksGuestPlacement(room.status)) {
++          throw new ReservationError(
++            `Room ${room.number} is ${ROOM_STATUS_LABELS[room.status]}. Choose an available room.`
++          );
+         }
+ 
+-        const expectedCategory = room.isTwin
+-          ? "Twin"
+-          : occupancy === "DOUBLE"
+-          ? "Double"
+-          : "Single";
+-        if (
+-          !tariff.name.toLowerCase().startsWith(expectedCategory.toLowerCase()) ||
+-          tariff.mealPlan !== mealPlan
+-        ) {
++        // Every room can be sold as Single, Double or Twin: the occupancy and
++        // meal plan the receptionist chose decide the price, not the room.
++        if (!tariffMatches(tariff.name, tariff.mealPlan, occupancy, mealPlan)) {
+           throw new ReservationError(
+-            "The selected tariff does not match the room, occupancy, and meal plan."
++            "The selected tariff does not match the occupancy and meal plan."
+           );
+         }
+ 
+diff --git a/app/api/room-types/route.ts b/app/api/room-types/route.ts
+index 8a3bea2..a87d9a1 100644
+--- a/app/api/room-types/route.ts
++++ b/app/api/room-types/route.ts
+@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
+ import { authOptions } from "@/lib/auth";
+ import { prisma } from "@/lib/prisma";
+ import { requireRole, ROLE_GROUPS } from "@/lib/authz";
++import { isMealPlan } from "@/lib/tariffs";
+ 
+ export async function GET() {
+   const session = await getServerSession(authOptions);
+@@ -25,12 +26,17 @@ export async function POST(req: Request) {
+     return NextResponse.json({ error: "Name and base rate are required." }, { status: 400 });
+   }
+ 
++  // The meal plan is what lets the reservation screens match this rate to a
++  // booking, so it is validated rather than stored blindly.
++  const mealPlan = isMealPlan(body.mealPlan) ? body.mealPlan : null;
++
+   const roomType = await prisma.roomType.create({
+     data: {
+       name: body.name,
+       description: body.description || null,
+       baseRate: body.baseRate,
+       capacity: body.capacity || 2,
++      mealPlan,
+     },
+   });
+   return NextResponse.json({ ...roomType, baseRate: Number(roomType.baseRate) }, { status: 201 });
+diff --git a/app/dashboard/front-desk/page.tsx b/app/dashboard/front-desk/page.tsx
+index fcf4d80..9926780 100644
+--- a/app/dashboard/front-desk/page.tsx
++++ b/app/dashboard/front-desk/page.tsx
+@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
+ import FrontDeskClient from "@/components/frontdesk/FrontDeskClient";
+ import { requirePageRole } from "@/lib/page-auth";
+ import { ROLE_GROUPS } from "@/lib/permissions";
++import { isBookableToday } from "@/lib/room-status";
+ import {
+   accommodationRequired,
+   folioTotals,
+@@ -64,6 +65,7 @@ function serializeReservation(reservation: FrontDeskReservation) {
+     guestName: reservation.guest.fullName,
+     checkInDate: reservation.checkInDate.toISOString(),
+     checkOutDate: reservation.checkOutDate.toISOString(),
++    roomId: reservation.rooms[0]?.room.id ?? "",
+     roomNumbers: reservation.rooms.map((room) => room.room.number).join(", "),
+     openFolioId: openFolio?.id ?? null,
+     requiredAmount: totals.required,
+@@ -97,6 +99,8 @@ export default async function FrontDeskPage() {
+     }),
+     prisma.room.findMany({
+       relationLoadStrategy: "join",
++      // Retired rooms keep their history but are not part of the rooms a guest
++      // can be given, so they never appear on the board.
+       where: { isActive: true },
+       include: { roomType: true },
+       orderBy: { number: "asc" },
+@@ -129,13 +133,14 @@ export default async function FrontDeskPage() {
+       arrivals={arrivals.map(serializeReservation)}
+       departures={departures.map(serializeReservation)}
+       inHouse={inHouse.map(serializeReservation)}
+-      availableRoomsCount={rooms.filter((room) => room.status === "AVAILABLE").length}
++      availableRoomsCount={rooms.filter((room) => isBookableToday(room.status)).length}
+       rooms={rooms.map((room) => ({
+         id: room.id,
+         number: room.number,
++        floor: room.floor,
++        status: room.status,
+         roomTypeName: room.roomType.name,
+         baseRate: Number(room.roomType.baseRate),
+-        isTwin: room.isTwin,
+       }))}
+     />
+   );
+diff --git a/app/dashboard/reservations/page.tsx b/app/dashboard/reservations/page.tsx
+index ce6dd77..2971979 100644
+--- a/app/dashboard/reservations/page.tsx
++++ b/app/dashboard/reservations/page.tsx
+@@ -9,6 +9,7 @@ export default async function ReservationsPage() {
+   const session = await requirePageRole(ROLE_GROUPS.GUEST_STAYS);
+ 
+   const rooms = await prisma.room.findMany({
++    // Retired rooms keep their history but cannot be booked.
+     where: { isActive: true },
+     include: { roomType: true },
+     orderBy: { number: "asc" },
+@@ -19,7 +20,7 @@ export default async function ReservationsPage() {
+     number: r.number,
+     roomTypeName: r.roomType.name,
+     baseRate: Number(r.roomType.baseRate),
+-    isTwin: r.isTwin,
++    status: r.status,
+   }));
+ 
+   return <ReservationsClient rooms={initialRooms} currentUserRole={session.user.role} />;
+diff --git a/components/frontdesk/CheckInModal.tsx b/components/frontdesk/CheckInModal.tsx
+index a44bce4..8623610 100644
+--- a/components/frontdesk/CheckInModal.tsx
++++ b/components/frontdesk/CheckInModal.tsx
+@@ -1,8 +1,23 @@
+ "use client";
+ 
+-import { useEffect, useState } from "react";
++import { useEffect, useMemo, useState } from "react";
++import type { RoomStatus } from "@prisma/client";
+ import { X } from "lucide-react";
+ import { roundMoney } from "@/lib/billing";
++import {
++  blocksGuestPlacement,
++  isBookableToday,
++  notBookableReason,
++  roomStatusClasses,
++  roomStatusDotClasses,
++  ROOM_STATUS_LABELS,
++} from "@/lib/room-status";
++
++export type SelectableRoom = {
++  id: string;
++  number: string;
++  status: RoomStatus;
++};
+ 
+ type PaymentMethod = { id: string; name: string };
+ 
+@@ -10,6 +25,7 @@ type CheckInReservation = {
+   id: string;
+   code: string;
+   guestName: string;
++  roomId: string;
+   roomNumbers: string;
+   requiredAmount: number;
+ };
+@@ -23,13 +39,16 @@ function money(value: number) {
+ 
+ export default function CheckInModal({
+   reservation,
++  rooms,
+   onClose,
+   onCheckedIn,
+ }: {
+   reservation: CheckInReservation;
++  rooms: SelectableRoom[];
+   onClose: () => void;
+   onCheckedIn: (folioId: string) => void;
+ }) {
++  const [newRoomId, setNewRoomId] = useState("");
+   const [methods, setMethods] = useState<PaymentMethod[]>([]);
+   const [methodId, setMethodId] = useState("");
+   const [amountPaid, setAmountPaid] = useState(String(reservation.requiredAmount));
+@@ -67,6 +86,21 @@ export default function CheckInModal({
+     };
+   }, []);
+ 
++  // The room the guest is actually given: the reserved one unless the
++  // receptionist moves them because it is not ready.
++  const reservedRoom = rooms.find((room) => room.id === reservation.roomId) ?? null;
++  const reservedRoomStatus = reservedRoom?.status ?? null;
++  // "Reserved" is not a problem here: it may be reserved for this very guest.
++  const reservedRoomReady = reservedRoomStatus ? !blocksGuestPlacement(reservedRoomStatus) : true;
++
++  const otherRooms = useMemo(
++    () =>
++      rooms
++        .filter((room) => room.id !== reservation.roomId && isBookableToday(room.status))
++        .sort((left, right) => left.number.localeCompare(right.number, undefined, { numeric: true })),
++    [rooms, reservation.roomId]
++  );
++
+   const numericPaid = Number(amountPaid);
+   const previewPaid = Number.isFinite(numericPaid) && numericPaid >= 0 ? numericPaid : 0;
+   const balance = roundMoney(Math.max(0, reservation.requiredAmount - previewPaid));
+@@ -96,6 +130,7 @@ export default function CheckInModal({
+         headers: { "Content-Type": "application/json" },
+         body: JSON.stringify({
+           reservationId: reservation.id,
++          newRoomId: newRoomId || null,
+           amountPaid: numericPaid,
+           paymentMethodId: numericPaid > 0 ? methodId : null,
+           reference,
+@@ -134,6 +169,62 @@ export default function CheckInModal({
+         </div>
+ 
+         <form onSubmit={submit} className="space-y-4">
++          {reservedRoom && (
++            <div className="rounded-control border border-border px-3 py-3">
++              <div className="flex items-center justify-between gap-3">
++                <span className="text-sm text-text-secondary">Reserved room</span>
++                <span className="flex items-center gap-2">
++                  <span className="text-sm font-semibold">Room {reservedRoom.number}</span>
++                  {reservedRoomStatus && (
++                    <span
++                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${roomStatusClasses(reservedRoomStatus)}`}
++                    >
++                      <span className={`h-1.5 w-1.5 rounded-full ${roomStatusDotClasses(reservedRoomStatus)}`} />
++                      {ROOM_STATUS_LABELS[reservedRoomStatus]}
++                    </span>
++                  )}
++                </span>
++              </div>
++
++              {!reservedRoomReady && reservedRoomStatus && (
++                <p className="mt-2 text-xs text-warning bg-warning/10 border border-warning/20 rounded-control px-2.5 py-2">
++                  {notBookableReason(reservedRoomStatus)} Give the guest another room below, or ask
++                  housekeeping to finish Room {reservedRoom.number} first.
++                </p>
++              )}
++
++              {otherRooms.length > 0 && (
++                <div className="mt-3">
++                  <label className="block text-sm font-medium mb-1.5">
++                    Change room (optional)
++                  </label>
++                  <select
++                    value={newRoomId}
++                    onChange={(event) => setNewRoomId(event.target.value)}
++                    className="w-full rounded-control border border-border px-3 py-2 text-sm"
++                  >
++                    <option value="">Keep Room {reservedRoom.number}</option>
++                    {otherRooms.map((room) => (
++                      <option key={room.id} value={room.id}>
++                        Room {room.number} — {ROOM_STATUS_LABELS[room.status]}
++                      </option>
++                    ))}
++                  </select>
++                  <p className="text-xs text-text-muted mt-1">
++                    Only rooms that are free and clean are listed. The nightly rate stays the same.
++                  </p>
++                </div>
++              )}
++
++              {otherRooms.length === 0 && !reservedRoomReady && (
++                <p className="mt-2 text-xs text-danger">
++                  No other room is free and clean right now. Ask housekeeping to finish Room{" "}
++                  {reservedRoom.number}, then check in.
++                </p>
++              )}
++            </div>
++          )}
++
+           <div className="rounded-control border border-border bg-bg px-3 py-3 text-sm space-y-2">
+             <div className="flex justify-between">
+               <span className="text-text-secondary">Amount required</span>
+@@ -213,7 +304,11 @@ export default function CheckInModal({
+             </button>
+             <button
+               type="submit"
+-              disabled={submitting || (paymentRequired && (loadingMethods || !methodId))}
++              disabled={
++                submitting ||
++                (paymentRequired && (loadingMethods || !methodId)) ||
++                (!reservedRoomReady && !newRoomId)
++              }
+               className="btn-primary"
+             >
+               {submitting ? "Checking in..." : "Confirm Check-in"}
+diff --git a/components/frontdesk/FrontDeskClient.tsx b/components/frontdesk/FrontDeskClient.tsx
+index e69d974..b00ed86 100644
+--- a/components/frontdesk/FrontDeskClient.tsx
++++ b/components/frontdesk/FrontDeskClient.tsx
+@@ -9,6 +9,15 @@ import FolioModal from "./FolioModal";
+ import CheckInModal from "./CheckInModal";
+ import ExtendStayModal from "./ExtendStayModal";
+ import { hasRole, ROLE_GROUPS } from "@/lib/permissions";
++import type { RoomStatus } from "@prisma/client";
++import {
++  isBookableToday,
++  ROOM_STATUS_HINTS,
++  ROOM_STATUS_LABELS,
++  roomStatusClasses,
++  roomStatusDotClasses,
++  summariseRooms,
++} from "@/lib/room-status";
+ 
+ type ResRow = {
+   id: string;
+@@ -16,6 +25,7 @@ type ResRow = {
+   guestName: string;
+   checkInDate: string;
+   checkOutDate: string;
++  roomId: string;
+   roomNumbers: string;
+   openFolioId: string | null;
+   requiredAmount: number;
+@@ -23,7 +33,14 @@ type ResRow = {
+   balance: number;
+   nightlyRateTotal: number;
+ };
+-type Room = { id: string; number: string; roomTypeName: string; baseRate: number; isTwin: boolean };
++type Room = {
++  id: string;
++  number: string;
++  floor: string | null;
++  status: RoomStatus;
++  roomTypeName: string;
++  baseRate: number;
++};
+ 
+ function money(value: number) {
+   return `KSh ${value.toLocaleString(undefined, {
+@@ -56,6 +73,13 @@ export default function FrontDeskClient({
+   const [extendReservation, setExtendReservation] = useState<ResRow | null>(null);
+   const [openFolio, setOpenFolio] = useState<{ folioId: string; reservationId: string } | null>(null);
+ 
++  const roomSummary = summariseRooms(rooms);
++  const roomsByFloor = rooms.reduce<Record<string, Room[]>>((groups, room) => {
++    const floor = room.floor ?? "Other";
++    (groups[floor] ??= []).push(room);
++    return groups;
++  }, {});
++
+   function refresh() {
+     router.refresh();
+   }
+@@ -99,6 +123,60 @@ export default function FrontDeskClient({
+         </p>
+       )}
+ 
++      <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm mb-5">
++        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
++          <div>
++            <h2 className="text-base font-bold">Room Status</h2>
++            <p className="text-xs text-text-secondary mt-0.5">
++              {roomSummary.bookable} of {roomSummary.total} rooms free and clean right now
++            </p>
++          </div>
++          <button
++            type="button"
++            onClick={refresh}
++            className="text-xs font-medium rounded-control border border-border px-3 py-1.5 hover:bg-bg"
++          >
++            Refresh
++          </button>
++        </div>
++
++        <div className="flex flex-wrap gap-x-4 gap-y-1.5 mb-4">
++          {Array.from(roomSummary.counts.entries()).map(([status, count]) => (
++            <span key={status} className="inline-flex items-center gap-1.5 text-xs text-text-secondary">
++              <span className={`h-2 w-2 rounded-full ${roomStatusDotClasses(status)}`} />
++              {ROOM_STATUS_LABELS[status]}: <span className="font-semibold">{count}</span>
++            </span>
++          ))}
++        </div>
++
++        <div className="space-y-3">
++          {Object.entries(roomsByFloor)
++            .sort(([left], [right]) => left.localeCompare(right, undefined, { numeric: true }))
++            .map(([floor, floorRooms]) => (
++              <div key={floor}>
++                <p className="text-xs font-medium uppercase tracking-wide text-text-muted mb-1.5">
++                  {floor === "Other" ? "Other rooms" : `Floor ${floor}`}
++                </p>
++                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
++                  {floorRooms.map((room) => (
++                    <div
++                      key={room.id}
++                      title={ROOM_STATUS_HINTS[room.status]}
++                      className={`rounded-control border px-2.5 py-1.5 ${roomStatusClasses(room.status)}`}
++                    >
++                      <div className="flex items-center gap-1.5">
++                        <span className={`h-1.5 w-1.5 rounded-full ${roomStatusDotClasses(room.status)}`} />
++                        <span className="text-sm font-semibold text-text-primary">{room.number}</span>
++                      </div>
++                      <p className="text-[11px] font-medium mt-0.5">{ROOM_STATUS_LABELS[room.status]}</p>
++                    </div>
++                  ))}
++                </div>
++              </div>
++            ))}
++        </div>
++      </section>
++
+       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+         <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
+           <div className="flex items-center justify-between mb-4 pb-3 border-b border-border">
+@@ -320,6 +398,7 @@ export default function FrontDeskClient({
+       {checkInReservation && (
+         <CheckInModal
+           reservation={checkInReservation}
++          rooms={rooms.map((room) => ({ id: room.id, number: room.number, status: room.status }))}
+           onClose={() => setCheckInReservation(null)}
+           onCheckedIn={(folioId) => {
+             refresh();
+diff --git a/components/reservations/CreateReservationModal.tsx b/components/reservations/CreateReservationModal.tsx
+index ea8b2ee..d40182f 100644
+--- a/components/reservations/CreateReservationModal.tsx
++++ b/components/reservations/CreateReservationModal.tsx
+@@ -3,12 +3,27 @@
+ import { useEffect, useMemo, useState } from "react";
+ import { X } from "lucide-react";
+ import { addDays, isoDay } from "@/lib/dates";
++import type { RoomStatus } from "@prisma/client";
++import {
++  isBookableToday,
++  notBookableReason,
++  roomStatusClasses,
++  roomStatusDotClasses,
++  ROOM_STATUS_LABELS,
++  roomStatusRank,
++} from "@/lib/room-status";
++import {
++  findTariff,
++  MEAL_PLAN_LABELS,
++  MEAL_PLANS,
++  OCCUPANCY_LABELS,
++  OCCUPANCIES,
++  type MealPlanCode,
++  type Occupancy,
++} from "@/lib/tariffs";
+ 
+-type Room = { id: string; number: string; roomTypeName: string; baseRate: number; isTwin: boolean };
+-type RoomTypeTariff = { id: string; name: string; baseRate: number | string; mealPlan: "BED_ONLY" | "BED_AND_BREAKFAST" };
+-
+-type Occupancy = "SINGLE" | "DOUBLE";
+-type MealPlan = "BED_ONLY" | "BED_AND_BREAKFAST";
++type Room = { id: string; number: string; roomTypeName: string; baseRate: number; status: RoomStatus };
++type RoomTypeTariff = { id: string; name: string; baseRate: number | string; mealPlan: string | null };
+ 
+ function inputClass() {
+   return "w-full rounded-control border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent";
+@@ -42,7 +57,7 @@ export default function CreateReservationModal({
+   const [checkInDate, setCheckInDate] = useState(isoDay(defaultDate));
+   const [checkOutDate, setCheckOutDate] = useState(isoDay(addDays(defaultDate, 1)));
+   const [occupancy, setOccupancy] = useState<Occupancy>("SINGLE");
+-  const [mealPlan, setMealPlan] = useState<MealPlan>("BED_ONLY");
++  const [mealPlan, setMealPlan] = useState<MealPlanCode>("BED_ONLY");
+   const [adults, setAdults] = useState("1");
+   const [children, setChildren] = useState("0");
+   const [discount, setDiscount] = useState("");
+@@ -57,20 +72,37 @@ export default function CreateReservationModal({
+ 
+   const room = rooms.find((r) => r.id === roomId);
+ 
+-  // Whichever tariff category applies: rooms 27/28 are always Twin,
+-  // everything else is whichever of Single/Double the receptionist picks.
+-  const tariffCategory = room?.isTwin ? "Twin" : occupancy === "DOUBLE" ? "Double" : "Single";
+-
++  // Every room can be sold as Single, Double or Twin: the receptionist's choice
++  // of occupancy and meal plan picks the tariff.
+   const matchedTariff = useMemo(
+-    () => tariffs.find((t) => t.name.startsWith(tariffCategory) && t.mealPlan === mealPlan),
+-    [tariffs, tariffCategory, mealPlan]
++    () => findTariff(tariffs, occupancy, mealPlan),
++    [tariffs, occupancy, mealPlan]
+   );
+   const rate = matchedTariff ? Number(matchedTariff.baseRate) : 0;
+ 
++  // Status is a "right now" fact, so it is enforced only when the stay starts
++  // today -- a room being cleaned today says nothing about next month.
++  const startsToday = checkInDate === isoDay(new Date());
++  const selectable = (candidate: Room) => !startsToday || isBookableToday(candidate.status);
++  const selectedRoomBlocked = room ? startsToday && !isBookableToday(room.status) : false;
++  const roomsForPicker = useMemo(
++    () =>
++      [...rooms].sort(
++        (left, right) =>
++          roomStatusRank(left.status) - roomStatusRank(right.status) ||
++          left.number.localeCompare(right.number, undefined, { numeric: true })
++      ),
++    [rooms]
++  );
++
+   async function submit(e: React.FormEvent) {
+     e.preventDefault();
+     if (!matchedTariff) {
+-      onError("Could not determine a rate for this room/occupancy/meal plan combination.");
++      onError("No tariff is set up for this occupancy and meal plan. Add one on the Rooms page.");
++      return;
++    }
++    if (selectedRoomBlocked && room) {
++      onError(`Room ${room.number} is ${ROOM_STATUS_LABELS[room.status]}. Choose an available room.`);
+       return;
+     }
+     setLoading(true);
+@@ -88,7 +120,7 @@ export default function CreateReservationModal({
+         checkOutDate: new Date(checkOutDate).toISOString(),
+         roomId,
+         tariffId: matchedTariff.id,
+-        occupancy: room?.isTwin ? "TWIN" : occupancy,
++        occupancy,
+         mealPlan,
+         adults: Number(adults) || 1,
+         children: Number(children) || 0,
+@@ -176,36 +208,73 @@ export default function CreateReservationModal({
+           <p className="text-xs font-medium uppercase tracking-wide text-text-muted pt-2">Room &amp; Tariff</p>
+ 
+           <div>
+-            <label className="block text-sm font-medium mb-1.5">Room</label>
+-            <select value={roomId} onChange={(e) => setRoomId(e.target.value)} className={inputClass()}>
+-              {rooms.map((r) => (
+-                <option key={r.id} value={r.id}>
+-                  Room {r.number}
++            <div className="flex items-baseline justify-between mb-1.5">
++              <label className="block text-sm font-medium">Room</label>
++              {startsToday && <span className="text-xs text-text-muted">Status is as of now</span>}
++            </div>
++            <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto rounded-control border border-border p-2">
++              {roomsForPicker.map((r) => {
++                const usable = selectable(r);
++                const chosen = r.id === roomId;
++                return (
++                  <button
++                    type="button"
++                    key={r.id}
++                    disabled={!usable}
++                    title={usable ? undefined : notBookableReason(r.status)}
++                    onClick={() => setRoomId(r.id)}
++                    className={[
++                      "flex items-center justify-between gap-2 rounded-control border px-2.5 py-2 text-left",
++                      chosen ? "border-primary-500 ring-1 ring-primary-500" : "border-border",
++                      usable ? "hover:border-primary-300" : "opacity-60 cursor-not-allowed",
++                    ].join(" ")}
++                  >
++                    <span className="text-sm font-medium">Room {r.number}</span>
++                    <span
++                      className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] font-medium ${roomStatusClasses(r.status)}`}
++                    >
++                      <span className={`h-1.5 w-1.5 rounded-full ${roomStatusDotClasses(r.status)}`} />
++                      {ROOM_STATUS_LABELS[r.status]}
++                    </span>
++                  </button>
++                );
++              })}
++            </div>
++            {selectedRoomBlocked && room && (
++              <p className="text-xs text-danger mt-1.5">
++                Room {room.number} is {ROOM_STATUS_LABELS[room.status]} — {notBookableReason(room.status)}{" "}
++                Choose an available room.
++              </p>
++            )}
++          </div>
++
++          <div>
++            <label className="block text-sm font-medium mb-1.5">Occupancy</label>
++            <select
++              value={occupancy}
++              onChange={(e) => setOccupancy(e.target.value as Occupancy)}
++              className={inputClass()}
++            >
++              {OCCUPANCIES.map((option) => (
++                <option key={option} value={option}>
++                  {OCCUPANCY_LABELS[option]}
+                 </option>
+               ))}
+             </select>
+           </div>
+ 
+-          {room?.isTwin ? (
+-            <div>
+-              <label className="block text-sm font-medium mb-1.5">Occupancy</label>
+-              <p className={`${inputClass()} bg-bg text-text-secondary`}>Twin (fixed -- 2 guests)</p>
+-            </div>
+-          ) : (
+-            <div>
+-              <label className="block text-sm font-medium mb-1.5">Occupancy</label>
+-              <select value={occupancy} onChange={(e) => setOccupancy(e.target.value as Occupancy)} className={inputClass()}>
+-                <option value="SINGLE">Single</option>
+-                <option value="DOUBLE">Double</option>
+-              </select>
+-            </div>
+-          )}
+-
+           <div>
+             <label className="block text-sm font-medium mb-1.5">Meal Plan</label>
+-            <select value={mealPlan} onChange={(e) => setMealPlan(e.target.value as MealPlan)} className={inputClass()}>
+-              <option value="BED_ONLY">Bed Only</option>
+-              <option value="BED_AND_BREAKFAST">Bed &amp; Breakfast</option>
++            <select
++              value={mealPlan}
++              onChange={(e) => setMealPlan(e.target.value as MealPlanCode)}
++              className={inputClass()}
++            >
++              {MEAL_PLANS.map((option) => (
++                <option key={option} value={option}>
++                  {MEAL_PLAN_LABELS[option]}
++                </option>
++              ))}
+             </select>
+           </div>
+ 
+diff --git a/components/reservations/ReservationsClient.tsx b/components/reservations/ReservationsClient.tsx
+index cbe76e8..11c1ebd 100644
+--- a/components/reservations/ReservationsClient.tsx
++++ b/components/reservations/ReservationsClient.tsx
+@@ -6,9 +6,10 @@ import clsx from "clsx";
+ import type { RoleName } from "@prisma/client";
+ import { startOfWeek, addDays, isoDay } from "@/lib/dates";
+ import { hasRole, ROLE_GROUPS } from "@/lib/permissions";
++import type { RoomStatus } from "@prisma/client";
+ import CreateReservationModal from "./CreateReservationModal";
+ 
+-type Room = { id: string; number: string; roomTypeName: string; baseRate: number; isTwin: boolean };
++type Room = { id: string; number: string; roomTypeName: string; baseRate: number; status: RoomStatus };
+ type Reservation = {
+   id: string;
+   code: string;
+diff --git a/components/rooms/RoomsClient.tsx b/components/rooms/RoomsClient.tsx
+index 9eff508..4aa7950 100644
+--- a/components/rooms/RoomsClient.tsx
++++ b/components/rooms/RoomsClient.tsx
+@@ -1,5 +1,7 @@
+ "use client";
+ 
++import type { RoomStatus } from "@prisma/client";
++import { ROOM_STATUSES, roomStatusClasses } from "@/lib/room-status";
+ import { useState } from "react";
+ import { useRouter } from "next/navigation";
+ import { Plus, X, Settings2 } from "lucide-react";
+@@ -23,37 +25,10 @@ type RoomType = {
+   capacity: number;
+ };
+ 
+-const STATUS_OPTIONS = [
+-  "AVAILABLE",
+-  "RESERVED",
+-  "OCCUPIED",
+-  "DIRTY",
+-  "CLEANING",
+-  "READY",
+-  "MAINTENANCE",
+-  "OUT_OF_ORDER",
+-];
++const STATUS_OPTIONS = ROOM_STATUSES;
+ 
+ function statusClasses(status: string) {
+-  switch (status) {
+-    case "AVAILABLE":
+-      return "bg-primary-50 text-primary-700";
+-    case "READY":
+-      return "bg-primary-50 text-primary-700";
+-    case "OCCUPIED":
+-      return "bg-champagne-50 text-champagne-500";
+-    case "RESERVED":
+-      return "bg-info/10 text-info";
+-    case "CLEANING":
+-      return "bg-info/10 text-info";
+-    case "DIRTY":
+-      return "bg-warning/10 text-warning";
+-    case "MAINTENANCE":
+-    case "OUT_OF_ORDER":
+-      return "bg-danger/10 text-danger";
+-    default:
+-      return "bg-bg text-text-secondary";
+-  }
++  return roomStatusClasses(status as RoomStatus);
+ }
+ 
+ export default function RoomsClient({
+diff --git a/lib/room-status.ts b/lib/room-status.ts
+new file mode 100644
+index 0000000..7f298e6
+--- /dev/null
++++ b/lib/room-status.ts
+@@ -0,0 +1,158 @@
++import type { RoomStatus } from "@prisma/client";
++
++/**
++ * The single source of truth for how a room's status is shown to staff.
++ *
++ * The receptionist reads this to decide which room to hand a guest, so every
++ * status is always shown as a word, never as a colour on its own. Colours are a
++ * second cue on top of the words.
++ */
++
++/** Plain-English name for each status. */
++export const ROOM_STATUS_LABELS: Record<RoomStatus, string> = {
++  AVAILABLE: "Available",
++  READY: "Ready",
++  RESERVED: "Reserved",
++  OCCUPIED: "Occupied",
++  CLEANING: "Being Cleaned",
++  DIRTY: "Needs Cleaning",
++  MAINTENANCE: "Maintenance",
++  OUT_OF_ORDER: "Out of Order",
++};
++
++/** One-line explanation, for tooltips and empty-state help. */
++export const ROOM_STATUS_HINTS: Record<RoomStatus, string> = {
++  AVAILABLE: "Free and ready for a guest.",
++  READY: "Cleaned and inspected — free for a guest.",
++  RESERVED: "Held for a guest arriving later.",
++  OCCUPIED: "A guest is staying in this room.",
++  CLEANING: "Housekeeping is working on it.",
++  DIRTY: "Not cleaned yet — do not give this to a guest.",
++  MAINTENANCE: "Being repaired — out of service.",
++  OUT_OF_ORDER: "Out of service.",
++};
++
++export const ROOM_STATUSES = Object.keys(ROOM_STATUS_LABELS) as RoomStatus[];
++
++/**
++ * Can this room be given to a guest right now?
++ *
++ * Only a room that is free and clean counts. A dirty room is deliberately
++ * excluded: putting a guest in an uncleaned room is the exact mistake this
++ * screen exists to prevent.
++ */
++export function isBookableToday(status: RoomStatus): boolean {
++  return status === "AVAILABLE" || status === "READY";
++}
++
++/**
++ * Statuses that make a room unfit to put a guest in *at all* -- dirty, being
++ * cleaned, occupied by someone else, or out of service.
++ *
++ * RESERVED is deliberately not on this list: a room is often marked reserved
++ * for the very booking being checked in, so treating it as blocked would stop
++ * the receptionist doing their job.
++ */
++export function blocksGuestPlacement(status: RoomStatus): boolean {
++  return (
++    status === "DIRTY" ||
++    status === "CLEANING" ||
++    status === "OCCUPIED" ||
++    status === "MAINTENANCE" ||
++    status === "OUT_OF_ORDER"
++  );
++}
++
++/** Why a room cannot be used, phrased for the receptionist. */
++export function notBookableReason(status: RoomStatus): string {
++  switch (status) {
++    case "OCCUPIED":
++      return "A guest is in this room.";
++    case "RESERVED":
++      return "Reserved for another guest.";
++    case "DIRTY":
++      return "Needs cleaning first.";
++    case "CLEANING":
++      return "Housekeeping is cleaning it.";
++    case "MAINTENANCE":
++      return "Under maintenance.";
++    case "OUT_OF_ORDER":
++      return "Out of order.";
++    default:
++      return "";
++  }
++}
++
++/** Colour treatment, matching the Rooms page so staff see one consistent system. */
++export function roomStatusClasses(status: RoomStatus): string {
++  switch (status) {
++    case "AVAILABLE":
++    case "READY":
++      return "bg-primary-50 text-primary-700 border-primary-100";
++    case "OCCUPIED":
++      return "bg-champagne-50 text-champagne-500 border-champagne-100";
++    case "RESERVED":
++    case "CLEANING":
++      return "bg-info/10 text-info border-info/20";
++    case "DIRTY":
++      return "bg-warning/10 text-warning border-warning/20";
++    case "MAINTENANCE":
++    case "OUT_OF_ORDER":
++      return "bg-danger/10 text-danger border-danger/20";
++    default:
++      return "bg-bg text-text-secondary border-border";
++  }
++}
++
++/** Small solid dot, for compact views such as the reservation room picker. */
++export function roomStatusDotClasses(status: RoomStatus): string {
++  switch (status) {
++    case "AVAILABLE":
++    case "READY":
++      return "bg-primary-500";
++    case "OCCUPIED":
++      return "bg-champagne-500";
++    case "RESERVED":
++    case "CLEANING":
++      return "bg-info";
++    case "DIRTY":
++      return "bg-warning";
++    case "MAINTENANCE":
++    case "OUT_OF_ORDER":
++      return "bg-danger";
++    default:
++      return "bg-text-muted";
++  }
++}
++
++/**
++ * Ordering for lists: rooms a guest could be put in come first, then the ones
++ * that need attention soonest, with the unusable rooms last.
++ */
++const SORT_ORDER: Record<RoomStatus, number> = {
++  AVAILABLE: 0,
++  READY: 1,
++  RESERVED: 2,
++  CLEANING: 3,
++  DIRTY: 4,
++  OCCUPIED: 5,
++  MAINTENANCE: 6,
++  OUT_OF_ORDER: 7,
++};
++
++export function roomStatusRank(status: RoomStatus): number {
++  return SORT_ORDER[status] ?? 99;
++}
++
++/** Counts per status, for the summary line above the board. */
++export function summariseRooms<T extends { status: RoomStatus }>(rooms: T[]) {
++  const counts = new Map<RoomStatus, number>();
++  for (const room of rooms) {
++    counts.set(room.status, (counts.get(room.status) ?? 0) + 1);
++  }
++  return {
++    total: rooms.length,
++    bookable: rooms.filter((room) => isBookableToday(room.status)).length,
++    counts,
++  };
++}
+diff --git a/lib/tariffs.ts b/lib/tariffs.ts
+new file mode 100644
+index 0000000..347f3d4
+--- /dev/null
++++ b/lib/tariffs.ts
+@@ -0,0 +1,69 @@
++/**
++ * Occupancy and meal-plan rules, shared by the reservation screens and the
++ * reservation API so the two cannot drift apart.
++ *
++ * A booking is priced by picking a room and then choosing who is staying
++ * (occupancy) and what meals are included (meal plan). The matching tariff --
++ * the RoomType row named "Single — Half Board", for example -- supplies the
++ * nightly rate. Rooms themselves carry no tariff restriction.
++ */
++
++export const OCCUPANCIES = ["SINGLE", "DOUBLE", "TWIN"] as const;
++export type Occupancy = (typeof OCCUPANCIES)[number];
++
++export const MEAL_PLANS = ["BED_ONLY", "BED_AND_BREAKFAST", "HALF_BOARD"] as const;
++export type MealPlanCode = (typeof MEAL_PLANS)[number];
++
++export const OCCUPANCY_LABELS: Record<Occupancy, string> = {
++  SINGLE: "Single",
++  DOUBLE: "Double",
++  TWIN: "Twin",
++};
++
++export const MEAL_PLAN_LABELS: Record<MealPlanCode, string> = {
++  BED_ONLY: "Bed Only",
++  BED_AND_BREAKFAST: "Bed & Breakfast",
++  HALF_BOARD: "Half Board",
++};
++
++export function isOccupancy(value: unknown): value is Occupancy {
++  return OCCUPANCIES.includes(value as Occupancy);
++}
++
++export function isMealPlan(value: unknown): value is MealPlanCode {
++  return MEAL_PLANS.includes(value as MealPlanCode);
++}
++
++/**
++ * The tariff category a booking falls into: "Single", "Double" or "Twin".
++ * The seeded tariff names all start with one of these words.
++ */
++export function tariffCategory(occupancy: Occupancy): string {
++  return OCCUPANCY_LABELS[occupancy];
++}
++
++/**
++ * Does this tariff belong to the chosen occupancy and meal plan?
++ *
++ * This is the rule the API enforces, so a tampered request cannot price a Twin
++ * booking at the Single rate. It is deliberately name-based because the tariff
++ * names are what the hotel maintains.
++ */
++export function tariffMatches(
++  tariffName: string,
++  tariffMealPlan: string | null,
++  occupancy: Occupancy,
++  mealPlan: MealPlanCode
++): boolean {
++  const category = tariffCategory(occupancy).toLowerCase();
++  return tariffName.trim().toLowerCase().startsWith(category) && tariffMealPlan === mealPlan;
++}
++
++/** Find the tariff for a booking, or undefined when the hotel has not set one up. */
++export function findTariff<T extends { name: string; mealPlan: string | null }>(
++  tariffs: T[],
++  occupancy: Occupancy,
++  mealPlan: MealPlanCode
++): T | undefined {
++  return tariffs.find((tariff) => tariffMatches(tariff.name, tariff.mealPlan, occupancy, mealPlan));
++}
+diff --git a/prisma/migrations/20261002090000_remove_room_is_twin/migration.sql b/prisma/migrations/20261002090000_remove_room_is_twin/migration.sql
+new file mode 100644
+index 0000000..7cfbc99
+--- /dev/null
++++ b/prisma/migrations/20261002090000_remove_room_is_twin/migration.sql
+@@ -0,0 +1,4 @@
++-- Rooms 27 and 28 were flagged as fixed twin-bed rooms, which locked them to a
++-- Twin tariff and blocked every other occupancy. Occupancy is now chosen per
++-- booking for every room, so the flag goes away and all rooms behave alike.
++ALTER TABLE "Room" DROP COLUMN "isTwin";
+diff --git a/prisma/migrations/20261002090100_add_half_board_meal_plan/migration.sql b/prisma/migrations/20261002090100_add_half_board_meal_plan/migration.sql
+new file mode 100644
+index 0000000..50d9d79
+--- /dev/null
++++ b/prisma/migrations/20261002090100_add_half_board_meal_plan/migration.sql
+@@ -0,0 +1,4 @@
++-- Adds Half Board to the meal plans the hotel can sell.
++-- Safe to run on a live database: it only widens the allowed values. The
++-- existing rows and tariffs are untouched.
++ALTER TYPE "MealPlan" ADD VALUE 'HALF_BOARD';
+diff --git a/prisma/migrations/20261002090200_add_half_board_tariffs/migration.sql b/prisma/migrations/20261002090200_add_half_board_tariffs/migration.sql
+new file mode 100644
+index 0000000..baaf1ce
+--- /dev/null
++++ b/prisma/migrations/20261002090200_add_half_board_tariffs/migration.sql
+@@ -0,0 +1,12 @@
++-- Half Board nightly rates for Axis Hotel Nakuru.
++-- Separate migration from the enum change above on purpose: PostgreSQL cannot
++-- use a new enum value in the same transaction that created it.
++--
++-- ON CONFLICT DO NOTHING means a price edited in the Rooms screen is never
++-- overwritten by a later deploy.
++INSERT INTO "RoomType" ("id", "name", "baseRate", "capacity", "mealPlan", "amenities", "createdAt", "updatedAt")
++VALUES
++  ('tariff-single-hb', 'Single — Half Board', 3400, 1, 'HALF_BOARD', ARRAY[]::TEXT[], CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
++  ('tariff-double-hb', 'Double — Half Board', 5300, 2, 'HALF_BOARD', ARRAY[]::TEXT[], CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
++  ('tariff-triple-hb', 'Twin — Half Board',   5800, 2, 'HALF_BOARD', ARRAY[]::TEXT[], CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
++ON CONFLICT ("id") DO NOTHING;
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index 41b04f6..eef8327 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -80,6 +80,7 @@ model RoomType {
+ enum MealPlan {
+   BED_ONLY
+   BED_AND_BREAKFAST
++  HALF_BOARD
+ }
+ 
+ model Room {
+@@ -89,7 +90,6 @@ model Room {
+   roomTypeId String
+   roomType   RoomType   @relation(fields: [roomTypeId], references: [id])
+   status     RoomStatus @default(AVAILABLE)
+-  isTwin     Boolean    @default(false) // true only for rooms 27 & 28 -- fixed twin-bed rooms, no occupancy choice at check-in
+   isActive   Boolean    @default(true) // inactive rooms stay in history but are hidden from hotel operations
+   notes      String?
+   createdAt  DateTime   @default(now())
+diff --git a/prisma/seed.ts b/prisma/seed.ts
+index ed0b62b..ea37612 100644
+--- a/prisma/seed.ts
++++ b/prisma/seed.ts
+@@ -160,9 +160,9 @@ async function main() {
+   // One-time real-room-list migration: rooms 101/102 were placeholder test
+   // rooms with made-up tariffs. Clear anything attached to them, then
+   // replace with Axis Hotel Nakuru's real 26 rooms across floors 1-4.
+-  // Rooms 27 and 28 are the only fixed twin-bed rooms; every other room is
+-  // flexible (Single or Double chosen at check-in), so isTwin marks only
+-  // those two.
++  // Rooms 27 and 28 are the ones with twin beds, so their default tariff label
++  // is the Twin one. That is only a label: occupancy is chosen per booking for
++  // every room, and no room is restricted to one occupancy.
+   // Find every room still on the old placeholder tariffs, whatever it's
+   // named -- not just 101/102 -- in case anything else got created
+   // through the UI while those were still the only types available.
+@@ -229,7 +229,7 @@ async function main() {
+     name: string;
+     baseRate: number;
+     capacity: number;
+-    mealPlan: "BED_ONLY" | "BED_AND_BREAKFAST";
++    mealPlan: "BED_ONLY" | "BED_AND_BREAKFAST" | "HALF_BOARD";
+   }[] = [
+     { id: "tariff-single-bo", name: "Single — Bed Only", baseRate: 2000, capacity: 1, mealPlan: "BED_ONLY" },
+     { id: "tariff-single-bb", name: "Single — B&B", baseRate: 2400, capacity: 1, mealPlan: "BED_AND_BREAKFAST" },
+@@ -237,6 +237,9 @@ async function main() {
+     { id: "tariff-double-bb", name: "Double — B&B", baseRate: 3300, capacity: 2, mealPlan: "BED_AND_BREAKFAST" },
+     { id: "tariff-triple-bo", name: "Triple — Bed Only", baseRate: 3000, capacity: 3, mealPlan: "BED_ONLY" },
+     { id: "tariff-triple-bb", name: "Triple — B&B", baseRate: 3800, capacity: 3, mealPlan: "BED_AND_BREAKFAST" },
++    { id: "tariff-single-hb", name: "Single — Half Board", baseRate: 3400, capacity: 1, mealPlan: "HALF_BOARD" },
++    { id: "tariff-double-hb", name: "Double — Half Board", baseRate: 5300, capacity: 2, mealPlan: "HALF_BOARD" },
++    { id: "tariff-triple-hb", name: "Twin — Half Board", baseRate: 5800, capacity: 2, mealPlan: "HALF_BOARD" },
+   ];
+   for (const t of tariffs) {
+     await prisma.roomType.upsert({
+@@ -245,7 +248,7 @@ async function main() {
+       create: t,
+     });
+   }
+-  console.log("Seeded the 6 real Axis Hotel tariff room types (Single/Double/Triple x Bed Only/B&B).");
++  console.log("Seeded the 9 real Axis Hotel tariff room types (Single/Double/Twin x Bed Only/B&B/Half Board).");
+ 
+   // Fix the mislabeled tariff: it was seeded as "Triple" (capacity 3), but
+   // it's really the Twin-bed tariff for rooms 27 & 28 (capacity 2).
+@@ -268,21 +271,20 @@ async function main() {
+   let realRoomCount = 0;
+   for (const group of floors) {
+     for (const num of group.numbers) {
+-      const isTwin = num === "27" || num === "28";
++      const hasTwinBeds = num === "27" || num === "28";
+       await prisma.room.upsert({
+         where: { number: num },
+-        update: { isTwin, floor: group.floor },
++        update: { floor: group.floor },
+         create: {
+           number: num,
+           floor: group.floor,
+-          isTwin,
+-          roomTypeId: isTwin ? "tariff-triple-bo" : "tariff-single-bo",
++          roomTypeId: hasTwinBeds ? "tariff-triple-bo" : "tariff-single-bo",
+         },
+       });
+       realRoomCount++;
+     }
+   }
+-  console.log(`Seeded the real ${realRoomCount}-room list across floors 1-4 (rooms 27 & 28 flagged as Twin).`);
++  console.log(`Seeded the real ${realRoomCount}-room list across floors 1-4 (every room bookable as Single, Double or Twin).`);
+ 
+   const methods = ["Cash", "M-Pesa", "Card", "Bank Transfer"];
+   for (const name of methods) {
