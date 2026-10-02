@@ -2,7 +2,7 @@
 
 > ## ⚠️ Read this first — most of what this document claims is not true
 >
-> `npm run test:run` currently reports **251 passing tests**. **132** of them execute real
+> `npm run test:run` currently reports **265 passing tests**. **146** of them execute real
 > application code; the other **119** still import nothing from `app/`, `lib/` or `components/`.
 > Verify it yourself:
 >
@@ -20,10 +20,10 @@
 > specification of what the real suite should eventually cover.
 
 ## Overview
-Testing suite for the Hotel Management System: **251 tests**, of which **132** exercise real
+Testing suite for the Hotel Management System: **265 tests**, of which **146** exercise real
 code and **119** are placeholder assertions awaiting replacement.
 
-The 132 that test real code, by suite:
+The 146 that test real code, by suite:
 
 | Suite | Tests | What it pins down |
 |---|---|---|
@@ -38,6 +38,7 @@ The 132 that test real code, by suite:
 | `restaurant/cart.test.ts` | 23 | the POS cart trust boundary (a forged price must not survive) and cart arithmetic |
 | `inventory/stock.test.ts` | 21 | recipe availability, stock status, unit formatting |
 | `reports/excel-export.test.ts` | 8 | the Excel workbook is well-formed and columns line up |
+| `scripts/pg-url.test.ts` | 14 | the connection-string handling shared by the backup and restore scripts |
 
 Each of these was mutation-tested: reintroducing the bug it guards makes it fail.
 

@@ -16,6 +16,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { sanitiseForPgTools } from "./pg-url.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -34,17 +35,6 @@ function readEnv() {
     if (match) env[match[1]] = match[2].trim().replace(/^["']|["']$/g, "");
   }
   return env;
-}
-
-export function sanitiseForPgTools(rawUrl) {
-  const url = new URL(rawUrl);
-  for (const key of ["schema", "connection_limit", "pool_timeout", "pgbouncer", "socket_timeout"]) {
-    url.searchParams.delete(key);
-  }
-  const host = url.hostname;
-  const isLocal = host === "localhost" || host === "127.0.0.1" || host === "::1";
-  if (!isLocal && !url.searchParams.has("sslmode")) url.searchParams.set("sslmode", "require");
-  return url.toString();
 }
 
 /**

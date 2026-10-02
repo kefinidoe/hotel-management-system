@@ -502,6 +502,58 @@ timezone pin makes two of them fail.
 
 ---
 
+### 6.12 The backup scripts — one real bug, and the part still unverified
+
+`scripts/backup-db.mjs` and `scripts/restore-db.mjs` are well written: the backup verifies
+the archive with `pg_restore --list` rather than trusting an exit code, deletes a dump that
+came out too small to be real, keeps a rolling window, and warns when the output folder is not
+cloud-synced. The restore refuses to run without an explicit target and refuses to write over
+the database the app is using. Neither script had a single test.
+
+`sanitiseForPgTools()` existed as **two separate copies**, one per script. They were
+behaviourally identical — but that is exactly how the `round2`/`roundMoney` divergence started
+(§6.9-adjacent, in `lib/restaurant.ts`): two implementations of one rule, which stay in step only
+until somebody edits one. This function decides which database gets dumped and which gets
+overwritten, so it is now one module, `scripts/pg-url.mjs`, imported by both.
+
+Writing the tests found a real bug in it:
+
+```js
+const host = url.hostname;               // "[::1]" for an IPv6 literal
+const isLocal = host === "::1";          // never true -- the brackets are still there
+```
+
+So `"::1"` was dead code, and a local IPv6 database was handed `sslmode=require`, which fails
+against a Postgres with no TLS configured. Fixed by stripping the brackets.
+
+The same work hardened a second hole: `new URL()` is permissive in ways that matter here.
+
+| Input | `new URL()` does | Consequence before the fix |
+|---|---|---|
+| `postgresql://` | parses, host `""` | accepted, then pg_dump fails confusingly |
+| `db.x.supabase.co:5432/postgres` | parses as protocol `db.x.supabase.co:`, host `""` | accepted — a URL that simply lost its scheme was treated as valid |
+
+Both now fail immediately with *"The connection string has no host."* That matters most for the
+restore script, whose entire job is refusing to write to the wrong database. The error message
+deliberately does not echo the URL, because the URL contains the password and these messages go
+to the console. There is a test for that too.
+
+**What is still NOT verified — and only you can do it.** No `pg_dump`, `pg_restore` or Postgres
+server exists in my sandbox, so nothing above exercises the actual dump. The logic around the
+tools is now tested; the tools themselves are not. A backup you have never restored is a guess.
+
+Run the restore drill on your machine, into a *throwaway* Supabase project (never the live one):
+
+```bat
+npm run backup                                  :: writes backups\hms-<stamp>.dump
+node restore-drill.mjs --file backups\hms-<stamp>.dump
+```
+
+The script refuses to target the database the app is using, which is what makes it safe to run.
+Until that has come back green at least once, treat the backup as unproven.
+
+---
+
 ---
 
 ## 7. What I could and couldn't run in this sandbox
@@ -608,7 +660,7 @@ tree again, so the work below can proceed on a single base.
 > details are recorded below rather than deleting the items, because "why is this safe?"
 > is the question worth being able to answer later.
 
-5. Replace the fake tests with real ones.
+5. Replace the fake tests with real ones. `scripts/pg-url.mjs` ✅ (14 tests) — see §6.12.
    - ✅ `lib/dates.ts` (8), `lib/report-export.ts` (8)
    - ✅ `lib/restaurant.ts` (23) — written as attacks on the cart trust boundary, plus cart
      arithmetic. Found and fixed the `round2` divergence below.

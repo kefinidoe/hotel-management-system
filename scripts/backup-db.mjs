@@ -20,6 +20,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { sanitiseForPgTools } from "./pg-url.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -47,25 +48,6 @@ function readEnv() {
     env[match[1]] = value;
   }
   return env;
-}
-
-/**
- * The connection string the app uses is a Prisma URL, which carries options that
- * only Prisma understands (`schema`, `connection_limit`, `pgbouncer`...). Handing
- * those straight to pg_dump fails with "invalid URI query parameter". Strip them
- * and make sure SSL is on for any remote host, since Supabase refuses plaintext.
- */
-export function sanitiseForPgTools(rawUrl) {
-  const url = new URL(rawUrl);
-  const prismaOnly = ["schema", "connection_limit", "pool_timeout", "pgbouncer", "socket_timeout"];
-  for (const key of prismaOnly) url.searchParams.delete(key);
-
-  const host = url.hostname;
-  const isLocal = host === "localhost" || host === "127.0.0.1" || host === "::1";
-  if (!isLocal && !url.searchParams.has("sslmode")) {
-    url.searchParams.set("sslmode", "require");
-  }
-  return url.toString();
 }
 
 // ── finding pg_dump ───────────────────────────────────────────────────────────
