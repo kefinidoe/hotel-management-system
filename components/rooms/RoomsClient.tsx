@@ -95,9 +95,6 @@ export default function RoomsClient({
                   <p className="mt-0.5 text-2xl font-bold tracking-tight text-text-primary">
                     {room.number}
                   </p>
-                  <p className="mt-1 text-sm font-medium text-text-secondary">
-                    {room.roomTypeName}
-                  </p>
                 </div>
 
                 <span className={clsx(
