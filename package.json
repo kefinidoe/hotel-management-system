@@ -15,6 +15,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "seed": "tsx prisma/seed.ts",
+    "db:clean": "tsx scripts/clean-test-data.ts",
     "reset-password": "tsx scripts/reset-password.ts",
     "backup": "node scripts/backup-db.mjs",
     "backup:restore": "node scripts/restore-db.mjs"
