@@ -44,7 +44,7 @@ export async function GET(req: Request) {
 
   const period = { gte: range.start, lt: range.endExclusive };
 
-  const [folioItems, payments, expenses, reservations, restaurantItems, inventoryItems] =
+  const [folioItems, payments, expenses, reservations, restaurantItems, inventoryItems, allTariffs] =
     await Promise.all([
       prisma.folioItem.groupBy({
         by: ["type"],
@@ -160,6 +160,7 @@ export async function GET(req: Request) {
           },
         },
       }),
+      prisma.roomType.findMany(),
     ]);
 
   // Financial activity recorded inside the selected date range.
@@ -254,11 +255,14 @@ export async function GET(req: Request) {
       source: reservation.source,
       adults: reservation.adults,
       children: reservation.children,
-      rooms: reservation.rooms.map((room) => ({
-        number: room.room.number,
-        roomType: room.room.roomType.name,
-        nightlyRate: Number(room.rate),
-      })),
+      rooms: reservation.rooms.map((room) => {
+        const matched = allTariffs.find((t) => Number(t.baseRate) === Number(room.rate));
+        return {
+          number: room.room.number,
+          roomType: matched ? matched.name : room.room.roomType.name,
+          nightlyRate: Number(room.rate),
+        };
+      }),
       bookedAccommodation: roundMoney(bookedAccommodation),
       accommodationSpent: roundMoney(accommodationSpent),
       restaurantSpent: roundMoney(restaurantSpent),

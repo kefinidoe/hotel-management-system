@@ -56,7 +56,7 @@ export default function RoomsClient({
         <div>
           <h1>Rooms</h1>
           <p className="text-text-secondary text-sm mt-1">
-            {initialRooms.length} rooms across {initialRoomTypes.length} room types.
+            {initialRooms.length} rooms across floors 1–4. Bookable as Single, Double, or Twin.
           </p>
         </div>
         {canManage && (
@@ -346,20 +346,12 @@ function RoomDetailModal({
   return (
     <ModalShell title={`Room ${room.number}`} onClose={onClose}>
       <div className="space-y-3">
-        <div>
-          <label className="block text-sm font-medium mb-1.5">Room Type</label>
-          <select
-            value={roomTypeId}
-            onChange={(e) => setRoomTypeId(e.target.value)}
-            disabled={!canManage}
-            className={inputClass()}
-          >
-            {roomTypes.map((rt) => (
-              <option key={rt.id} value={rt.id}>
-                {rt.name}
-              </option>
-            ))}
-          </select>
+        <div className="rounded-control border border-border bg-bg/60 p-3 text-xs">
+          <p className="font-semibold text-text-primary">Flexible Room</p>
+          <p className="mt-1 text-text-secondary leading-relaxed">
+            This room is not tied to a single category. The receptionist chooses{' '}
+            <strong className="text-text-primary">Single, Double, or Twin</strong> and the meal plan when creating each reservation.
+          </p>
         </div>
         <div>
           <label className="block text-sm font-medium mb-1.5">Status</label>

@@ -261,6 +261,21 @@ function exportDate(value: string) {
   });
 }
 
+function parseTariff(roomType: string): { occupancy: string; mealPlan: string } {
+  if (!roomType) return { occupancy: "", mealPlan: "" };
+  const parts = roomType.split(/\s*[—–-]\s*/);
+  if (parts.length >= 2) {
+    return {
+      occupancy: parts[0].trim(),
+      mealPlan: parts.slice(1).join(" — ").trim(),
+    };
+  }
+  return {
+    occupancy: roomType.trim(),
+    mealPlan: "",
+  };
+}
+
 export function buildReportsWorkbook(data: ReportExportData) {
   const overviewRows: CellValue[][] = [
     ["Metric", "Value"],
@@ -294,6 +309,7 @@ export function buildReportsWorkbook(data: ReportExportData) {
       "Check-out",
       "Room",
       "Occupancy",
+      "Meal Plan",
       "Status",
       "Source",
       "Adults",
@@ -316,7 +332,8 @@ export function buildReportsWorkbook(data: ReportExportData) {
       // than one room, so each is a comma-separated list in the same order --
       // "07, 12" pairs with "Single - Bed Only, Double - Bed Only".
       booking.rooms.map((room) => room.number).join(", "),
-      booking.rooms.map((room) => room.roomType).join(", "),
+      booking.rooms.map((room) => parseTariff(room.roomType).occupancy).join(", "),
+      booking.rooms.map((room) => parseTariff(room.roomType).mealPlan).join(", "),
       humanize(booking.status),
       humanize(booking.source),
       booking.adults,
@@ -390,7 +407,7 @@ export function buildReportsWorkbook(data: ReportExportData) {
     {
       name: "Booking History",
       rows: bookingRows,
-      widths: [18, 24, 22, 14, 14, 14, 24, 16, 16, 10, 10, 22, 22, 20, 18, 18, 18, 18],
+      widths: [18, 24, 22, 14, 14, 14, 16, 18, 16, 16, 10, 10, 22, 22, 20, 18, 18, 18, 18],
     },
     {
       name: "Restaurant Sales",
