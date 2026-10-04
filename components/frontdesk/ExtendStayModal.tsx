@@ -82,7 +82,7 @@ export default function ExtendStayModal({
 
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4">
-      <div className="card w-full max-w-md">
+      <div className="card w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
             <h2>Add Days</h2>

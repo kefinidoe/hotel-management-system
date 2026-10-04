@@ -41,7 +41,7 @@ export default function AdjustStockModal({
 
   return (
     <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4">
-      <div className="card w-full max-w-sm">
+      <div className="card w-full max-w-sm max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-1">
           <h2>Adjust Stock</h2>
           <button onClick={onClose} className="text-text-secondary hover:text-text-primary">

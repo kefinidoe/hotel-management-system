@@ -298,7 +298,7 @@ function SetPasswordModal({
 
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4">
-      <div className="card w-full max-w-sm">
+      <div className="card w-full max-w-sm max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-1">
           <h2>Set Password</h2>
           <button onClick={onClose} className="text-text-secondary hover:text-text-primary">
@@ -412,7 +412,7 @@ function AddStaffModal({
 
   return (
     <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4">
-      <div className="card w-full max-w-md">
+      <div className="card w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h2>Add Staff</h2>
           <button onClick={onClose} className="text-text-secondary hover:text-text-primary">

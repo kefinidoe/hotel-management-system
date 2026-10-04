@@ -48,7 +48,7 @@ export default function ChangePasswordModal({ onClose }: { onClose: () => void }
 
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4">
-      <div className="card w-full max-w-sm">
+      <div className="card w-full max-w-sm max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h2>Change Password</h2>
           <button onClick={onClose} className="text-text-secondary hover:text-text-primary">
