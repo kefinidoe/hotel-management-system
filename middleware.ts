@@ -2,27 +2,24 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
-/**
- * Blanket guard for the whole authenticated app.
- *
- * Two matchers, because the two kinds of unauthenticated request need
- * different answers:
- *
- *   /dashboard/*  -> a browser, so redirect to /login (keeping where they
- *                    were headed in ?callbackUrl)
- *   /api/*        -> a fetch() from a client component, so a redirect would
- *                    be followed silently and the caller would try to parse
- *                    the login page as JSON. Return a real 401 instead.
- *
- * /api/auth/* (NextAuth's own sign-in endpoints) is deliberately excluded by
- * the matcher below -- guarding it would make signing in impossible.
- *
- * This does NOT replace the per-route checks in lib/authz.ts. Those still own
- * authorisation (which role may do what); this only guarantees that no
- * endpoint is reachable anonymously if someone forgets a check.
- */
+function getCleanSecret(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  return raw
+    .replace(/^NEXTAUTH_SECRET\s*=\s*/i, "")
+    .replace(/^["']+|["']+$/g, "")
+    .trim();
+}
+
 export async function middleware(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  const secret = getCleanSecret(process.env.NEXTAUTH_SECRET);
+  let token = await getToken({
+    req,
+    secret,
+    secureCookie: req.nextUrl.protocol === "https:",
+  });
+  if (!token) {
+    token = await getToken({ req, secret });
+  }
   if (token) return NextResponse.next();
 
   const { pathname, search } = req.nextUrl;
@@ -39,7 +36,6 @@ export async function middleware(req: NextRequest) {
 export const config = {
   matcher: [
     "/dashboard/:path*",
-    // every /api/* route except /api/auth/* (negative lookahead)
     "/api/:path((?!auth/).*)",
   ],
 };
