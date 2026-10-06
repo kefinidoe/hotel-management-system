@@ -34,7 +34,17 @@ async function main() {
   const deletedMaintenance = await prisma.maintenanceTicket.deleteMany({});
   console.log(`✓ Deleted ${deletedMaintenance.count} test maintenance tickets`);
 
-  // 3. Expenses, Notifications, and Audit Logs
+  // 3. Inventory Transactions (Stock Movements, Purchases, Wastage)
+  const deletedStockMovements = await prisma.stockMovement.deleteMany({});
+  console.log(`✓ Deleted ${deletedStockMovements.count} test stock movements`);
+
+  const deletedPurchases = await prisma.purchase.deleteMany({});
+  console.log(`✓ Deleted ${deletedPurchases.count} test purchases`);
+
+  const deletedWastage = await prisma.wastage.deleteMany({});
+  console.log(`✓ Deleted ${deletedWastage.count} test wastage records`);
+
+  // 4. Expenses, Notifications, and Audit Logs
   const deletedExpenses = await prisma.expense.deleteMany({});
   console.log(`✓ Deleted ${deletedExpenses.count} test expenses`);
 
@@ -44,11 +54,11 @@ async function main() {
   const deletedAuditLogs = await prisma.auditLog.deleteMany({});
   console.log(`✓ Deleted ${deletedAuditLogs.count} test audit logs`);
 
-  // 4. Test Guests
+  // 5. Test Guests
   const deletedGuests = await prisma.guest.deleteMany({});
   console.log(`✓ Deleted ${deletedGuests.count} test guest profiles`);
 
-  // 5. Reset all Room statuses to AVAILABLE
+  // 6. Reset all Room statuses to AVAILABLE
   const updatedRooms = await prisma.room.updateMany({
     data: {
       status: "AVAILABLE",
@@ -60,7 +70,7 @@ async function main() {
   console.log("\n🎉 The database is completely clean and ready for client hotel deployment!");
   console.log("   • All staff accounts preserved");
   console.log("   • All rooms and tariff configurations preserved");
-  console.log("   • All restaurant menu items and inventory preserved");
+  console.log("   • All restaurant menu items, recipes, and inventory items preserved");
 }
 
 main()
