@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/authz";
+import { requireAuth, requireRole } from "@/lib/authz";
 
 export async function POST() {
-  const { error } = await requireRole(["ADMIN"]);
-  if (error) return error;
+  const session = await requireAuth();
+  if (session instanceof NextResponse) return session;
+  const forbidden = requireRole(session, ["ADMIN"]);
+  if (forbidden) return forbidden;
 
   const deletedPayments = await prisma.payment.deleteMany({});
   const deletedFolioItems = await prisma.folioItem.deleteMany({});
