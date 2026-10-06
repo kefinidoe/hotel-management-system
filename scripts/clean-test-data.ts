@@ -34,15 +34,19 @@ async function main() {
   const deletedMaintenance = await prisma.maintenanceTicket.deleteMany({});
   console.log(`✓ Deleted ${deletedMaintenance.count} test maintenance tickets`);
 
-  // 3. Inventory Transactions (Stock Movements, Purchases, Wastage)
-  const deletedStockMovements = await prisma.stockMovement.deleteMany({});
-  console.log(`✓ Deleted ${deletedStockMovements.count} test stock movements`);
+  // 3. Inventory: Recipes, Purchases, Wastage, and Stock Movements (keeping Stock items)
+  const deletedRecipeIngredients = await prisma.recipeIngredient.deleteMany({});
+  const deletedRecipes = await prisma.recipe.deleteMany({});
+  console.log(`✓ Deleted ${deletedRecipes.count} recipes (${deletedRecipeIngredients.count} recipe ingredients)`);
 
   const deletedPurchases = await prisma.purchase.deleteMany({});
-  console.log(`✓ Deleted ${deletedPurchases.count} test purchases`);
+  console.log(`✓ Deleted ${deletedPurchases.count} purchases`);
 
   const deletedWastage = await prisma.wastage.deleteMany({});
-  console.log(`✓ Deleted ${deletedWastage.count} test wastage records`);
+  console.log(`✓ Deleted ${deletedWastage.count} wastage records`);
+
+  const deletedStockMovements = await prisma.stockMovement.deleteMany({});
+  console.log(`✓ Deleted ${deletedStockMovements.count} stock movements`);
 
   // 4. Expenses, Notifications, and Audit Logs
   const deletedExpenses = await prisma.expense.deleteMany({});
@@ -70,7 +74,8 @@ async function main() {
   console.log("\n🎉 The database is completely clean and ready for client hotel deployment!");
   console.log("   • All staff accounts preserved");
   console.log("   • All rooms and tariff configurations preserved");
-  console.log("   • All restaurant menu items, recipes, and inventory items preserved");
+  console.log("   • All restaurant menu items and Stock items preserved");
+  console.log("   • Recipes, Purchases, Wastage, and Stock Movements cleaned");
 }
 
 main()
