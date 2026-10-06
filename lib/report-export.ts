@@ -15,6 +15,7 @@ type ReportExportData = {
     totalBookings: number;
     statusCounts: Record<string, number>;
     bookedAccommodation: number;
+    cancelledAccommodation?: number;
     totalBilled: number;
     amountPaid: number;
     balanceDue: number;
@@ -31,6 +32,7 @@ type ReportExportData = {
     children: number;
     rooms: { number: string; roomType: string; nightlyRate: number }[];
     bookedAccommodation: number;
+    cancelledAccommodation?: number;
     accommodationSpent: number;
     restaurantSpent: number;
     otherSpent: number;
@@ -288,6 +290,8 @@ export function buildReportsWorkbook(data: ReportExportData) {
     ["Restaurant Revenue", money(data.restaurant.summary.revenue)],
     ["Current Stock Value", money(data.inventory.summary.currentStockValue)],
     ["Bookings Overlapping Period", data.bookingSummary.totalBookings],
+    ["Booked Accommodation (Excl. Cancelled)", money(data.bookingSummary.bookedAccommodation)],
+    ["Cancelled Bookings Amount", money(data.bookingSummary.cancelledAccommodation ?? 0)],
   ];
 
   for (const item of data.billed) {
@@ -315,6 +319,7 @@ export function buildReportsWorkbook(data: ReportExportData) {
       "Adults",
       "Children",
       "Booked Accommodation",
+      "Cancelled Amount",
       "Accommodation Spend",
       "Restaurant Spend",
       "Other Spend",
@@ -339,6 +344,7 @@ export function buildReportsWorkbook(data: ReportExportData) {
       booking.adults,
       booking.children,
       money(booking.bookedAccommodation),
+      money(booking.cancelledAccommodation ?? 0),
       money(booking.accommodationSpent),
       money(booking.restaurantSpent),
       money(booking.otherSpent),
@@ -407,7 +413,7 @@ export function buildReportsWorkbook(data: ReportExportData) {
     {
       name: "Booking History",
       rows: bookingRows,
-      widths: [18, 24, 22, 14, 14, 14, 16, 18, 16, 16, 10, 10, 22, 22, 20, 18, 18, 18, 18],
+      widths: [18, 24, 22, 14, 14, 14, 16, 18, 16, 16, 10, 10, 22, 20, 22, 20, 18, 18, 18, 18],
     },
     {
       name: "Restaurant Sales",

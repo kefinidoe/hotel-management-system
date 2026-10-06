@@ -232,17 +232,21 @@ export async function GET(req: Request) {
       0
     );
 
-    let bookedAccommodation = 0;
+    let rawAccommodation = 0;
     try {
-      bookedAccommodation = accommodationRequired(
+      rawAccommodation = accommodationRequired(
         reservation.rooms.map((room) => Number(room.rate)),
         stayNights(reservation.checkInDate, reservation.checkOutDate),
         Number(reservation.discount ?? 0)
       );
     } catch {
       // Preserve the history row even if old data is incomplete.
-      bookedAccommodation = 0;
+      rawAccommodation = 0;
     }
+
+    const isCancelled = reservation.status === "CANCELLED";
+    const bookedAccommodation = isCancelled ? 0 : rawAccommodation;
+    const cancelledAccommodation = isCancelled ? rawAccommodation : 0;
 
     return {
       id: reservation.id,
@@ -264,6 +268,7 @@ export async function GET(req: Request) {
         };
       }),
       bookedAccommodation: roundMoney(bookedAccommodation),
+      cancelledAccommodation: roundMoney(cancelledAccommodation),
       accommodationSpent: roundMoney(accommodationSpent),
       restaurantSpent: roundMoney(restaurantSpent),
       otherSpent: roundMoney(otherSpent),
@@ -288,6 +293,9 @@ export async function GET(req: Request) {
     statusCounts: bookingStatusCounts,
     bookedAccommodation: roundMoney(
       bookingHistory.reduce((sum, booking) => sum + booking.bookedAccommodation, 0)
+    ),
+    cancelledAccommodation: roundMoney(
+      bookingHistory.reduce((sum, booking) => sum + booking.cancelledAccommodation, 0)
     ),
     totalBilled: roundMoney(
       bookingHistory.reduce((sum, booking) => sum + booking.totalBilled, 0)

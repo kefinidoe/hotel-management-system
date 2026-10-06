@@ -23,6 +23,7 @@ type BookingRow = {
   children: number;
   rooms: { number: string; roomType: string; nightlyRate: number }[];
   bookedAccommodation: number;
+  cancelledAccommodation: number;
   accommodationSpent: number;
   restaurantSpent: number;
   otherSpent: number;
@@ -88,6 +89,7 @@ type ReportData = {
     totalBookings: number;
     statusCounts: Record<string, number>;
     bookedAccommodation: number;
+    cancelledAccommodation: number;
     totalBilled: number;
     amountPaid: number;
     balanceDue: number;
@@ -770,9 +772,10 @@ export default function ReportsClient() {
               <p className="text-xs text-text-muted">
                 Includes every stay that overlaps the selected dates. Spend and payment columns show the booking&apos;s complete folio history.
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4">
                 <StatCard label="Bookings" value={data.bookingSummary.totalBookings.toLocaleString()} />
-                <StatCard label="Booked Accommodation" value={formatMoney(data.bookingSummary.bookedAccommodation)} />
+                <StatCard label="Booked Accommodation" value={formatMoney(data.bookingSummary.bookedAccommodation)} note="Excludes cancelled" />
+                <StatCard label="Cancelled Amount" value={formatMoney(data.bookingSummary.cancelledAccommodation ?? 0)} tone="danger" />
                 <StatCard label="Total Guest Spend" value={formatMoney(data.bookingSummary.totalBilled)} />
                 <StatCard label="Amount Paid" value={formatMoney(data.bookingSummary.amountPaid)} tone="success" />
                 <StatCard label="Balance Due" value={formatMoney(data.bookingSummary.balanceDue)} tone="warning" />
@@ -801,6 +804,7 @@ export default function ReportsClient() {
                           <th className="py-2 pr-4">Stay / Rooms</th>
                           <th className="py-2 pr-4">Status</th>
                           <th className="py-2 pr-4 text-right">Booked</th>
+                          <th className="py-2 pr-4 text-right">Cancelled</th>
                           <th className="py-2 pr-4 text-right">Accommodation</th>
                           <th className="py-2 pr-4 text-right">Restaurant</th>
                           <th className="py-2 pr-4 text-right">Other</th>
@@ -832,6 +836,9 @@ export default function ReportsClient() {
                               </span>
                             </td>
                             <td className="py-3 pr-4 text-right">{formatMoney(booking.bookedAccommodation)}</td>
+                            <td className={`py-3 pr-4 text-right ${(booking.cancelledAccommodation ?? 0) > 0 ? "text-danger font-medium" : "text-text-muted"}`}>
+                              {formatMoney(booking.cancelledAccommodation ?? 0)}
+                            </td>
                             <td className="py-3 pr-4 text-right">{formatMoney(booking.accommodationSpent)}</td>
                             <td className="py-3 pr-4 text-right">{formatMoney(booking.restaurantSpent)}</td>
                             <td className="py-3 pr-4 text-right">{formatMoney(booking.otherSpent)}</td>

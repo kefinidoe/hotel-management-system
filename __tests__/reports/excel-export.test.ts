@@ -31,6 +31,7 @@ export function __fixtureForPreview() {
       totalBookings: 2,
       statusCounts: { CHECKED_IN: 1, RESERVED: 1 },
       bookedAccommodation: 5000,
+      cancelledAccommodation: 0,
       totalBilled: 5000,
       amountPaid: 5000,
       balanceDue: 0,
@@ -52,6 +53,7 @@ export function __fixtureForPreview() {
           { number: "12", roomType: "Double — B&B", nightlyRate: 3300 },
         ],
         bookedAccommodation: 5300,
+        cancelledAccommodation: 0,
         accommodationSpent: 5300,
         restaurantSpent: 0,
         otherSpent: 0,
@@ -70,6 +72,7 @@ export function __fixtureForPreview() {
         children: 0,
         rooms: [], // a booking with no room yet must not shift the row
         bookedAccommodation: 0,
+        cancelledAccommodation: 0,
         accommodationSpent: 0,
         restaurantSpent: 0,
         otherSpent: 0,
@@ -158,11 +161,13 @@ describe("Excel export — Booking History sheet", () => {
     expect(header.indexOf("Occupancy")).toBe(header.indexOf("Room") + 1);
     // Everything after is unchanged and still in order.
     expect(header.slice(header.indexOf("Occupancy") + 1)).toEqual([
+      "Meal Plan",
       "Status",
       "Source",
       "Adults",
       "Children",
       "Booked Accommodation",
+      "Cancelled Amount",
       "Accommodation Spend",
       "Restaurant Spend",
       "Other Spend",
@@ -175,7 +180,8 @@ describe("Excel export — Booking History sheet", () => {
   it("never writes room number and occupancy into the same cell", () => {
     const firstRow = rows.get(2)! as string[];
     expect(firstRow[header.indexOf("Room")]).toBe("07, 12");
-    expect(firstRow[header.indexOf("Occupancy")]).toBe("Single — Bed Only, Double — B&B");
+    expect(firstRow[header.indexOf("Occupancy")]).toBe("Single, Double");
+    expect(firstRow[header.indexOf("Meal Plan")]).toBe("Bed Only, B&B");
 
     // The exact string the old single column produced must be gone.
     expect(bookingSheetXml()).not.toContain("07 (Single — Bed Only)");
@@ -188,9 +194,9 @@ describe("Excel export — Booking History sheet", () => {
     expect(numbers).toHaveLength(2);
     expect(occupancies).toHaveLength(2);
     expect(numbers[0]).toBe("07");
-    expect(occupancies[0]).toBe("Single — Bed Only");
+    expect(occupancies[0]).toBe("Single");
     expect(numbers[1]).toBe("12");
-    expect(occupancies[1]).toBe("Double — B&B");
+    expect(occupancies[1]).toBe("Double");
   });
 
   it("leaves both cells empty for a booking with no room yet", () => {
