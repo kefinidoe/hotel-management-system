@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { Prisma } from "@prisma/client";
+import { createNotification } from "@/lib/notifications";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { rangesOverlap } from "@/lib/dates";
@@ -263,6 +264,7 @@ export async function POST(req: Request) {
           },
         });
 
+        await createNotification("New Reservation", `Reservation ${reservation.code} created for ${guestName}`);
         return { id: reservation.id, code: reservation.code };
       },
       { timeout: 15_000 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { Prisma } from "@prisma/client";
+import { createNotification } from "@/lib/notifications";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { requireRole, ROLE_GROUPS } from "@/lib/authz";
@@ -237,6 +238,7 @@ export async function POST(req: Request) {
           });
         }
 
+        await createNotification("Guest Checked In", `Reservation ${reservation.code} (${assignedRoom?.number || reservation.rooms[0].room.number}) checked in.`);
         return {
           folioId: folio.id,
           required,

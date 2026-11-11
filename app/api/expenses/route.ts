@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { createNotification } from "@/lib/notifications";
 import { requireAuth } from "@/lib/authz";
 
 export async function GET() {
@@ -66,5 +67,6 @@ export async function POST(req: Request) {
     },
   });
 
+  await createNotification("New Expense Request", `${auth.user.name} submitted an expense for ${category}: KSh ${amount.toLocaleString()}`);
   return NextResponse.json(expense, { status: 201 });
 }

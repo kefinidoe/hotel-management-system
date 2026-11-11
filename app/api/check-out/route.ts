@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { Prisma } from "@prisma/client";
+import { createNotification } from "@/lib/notifications";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { requireRole, ROLE_GROUPS } from "@/lib/authz";
@@ -99,6 +100,7 @@ export async function POST(req: Request) {
           });
         }
 
+        await createNotification("Guest Checked Out", `Reservation ${reservation.code} checked out.`);
         return { folioId: openFolio.id, ...totals };
       },
       {

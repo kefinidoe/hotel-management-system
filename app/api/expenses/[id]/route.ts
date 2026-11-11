@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/authz";
+import { createNotification } from "@/lib/notifications";
 
 // Approve or reject a pending expense. Only ADMIN/MANAGER can do this --
 // the person who submitted an expense can't also be the one who approves it.
@@ -29,5 +30,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     data: { status },
   });
 
+  await createNotification(`Expense ${status.toLowerCase()}`, `Expense for ${expense.category} (KSh ${Number(expense.amount).toLocaleString()}) was ${status.toLowerCase()} by ${auth.user.name}.`);
   return NextResponse.json(updated);
 }
