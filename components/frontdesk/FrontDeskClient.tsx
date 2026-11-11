@@ -6,15 +6,12 @@ import {
   LogIn, 
   LogOut, 
   BedDouble, 
-  Search, 
   Plus, 
-  MoreHorizontal, 
   AlertCircle 
 } from "lucide-react";
 import clsx from "clsx";
 import type { RoleName } from "@prisma/client";
 import { hasRole, ROLE_GROUPS } from "@/lib/permissions";
-import { formatDisplayDate } from "@/lib/dates";
 import CreateReservationModal from "@/components/reservations/CreateReservationModal";
 import CheckInModal from "@/components/frontdesk/CheckInModal";
 import ExtendStayModal from "@/components/frontdesk/ExtendStayModal";
@@ -92,6 +89,12 @@ export default function FrontDeskClient({
 
   const refresh = () => {
     window.location.reload();
+  };
+
+  const getEmptyMessage = () => {
+    if (activeTab === "inHouse") return "in-house guests";
+    if (activeTab === "arrivals") return "arrivals";
+    return "departures";
   };
 
   return (
@@ -268,7 +271,7 @@ export default function FrontDeskClient({
                 <TAB_ICONS[activeTab] size={40} className="text-text-muted" />
              </div>
              <p className="font-bold text-text-primary">No guests found</p>
-             <p className="text-sm text-text-secondary mt-1">There are no {activeTab === "inHouse" ? "in-house guests" : activeTab} scheduled.</p>
+             <p className="text-sm text-text-secondary mt-1">There are no {getEmptyMessage()} scheduled.</p>
           </div>
         )}
       </div>
