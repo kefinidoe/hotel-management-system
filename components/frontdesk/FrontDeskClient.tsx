@@ -268,7 +268,7 @@ export default function FrontDeskClient({
                 <TAB_ICONS[activeTab] size={40} className="text-text-muted" />
              </div>
              <p className="font-bold text-text-primary">No guests found</p>
-             <p className="text-sm text-text-secondary mt-1">There are no {activeTab.replace(/([A-Z])/g, ' $1').toLowerCase()} scheduled.</p>
+             <p className="text-sm text-text-secondary mt-1">There are no {activeTab === "inHouse" ? "in-house guests" : activeTab} scheduled.</p>
           </div>
         )}
       </div>

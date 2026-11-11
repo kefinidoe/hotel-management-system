@@ -12,7 +12,10 @@ import {
   TrendingUp,
   XCircle,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Boxes,
+  UtensilsCrossed,
+  PackageSearch
 } from "lucide-react";
 import {
   formatQty,
@@ -147,7 +150,6 @@ const STATUS_BADGE: Record<string, string> = {
 export default function ReportsClient({ initialData }: { initialData: ReportData }) {
   const [data, setData] = useState(initialData);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
-  const [loading, setLoading] = useState(false);
 
   const formatMoney = (val: number) => 
     `KSh ${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -162,7 +164,7 @@ export default function ReportsClient({ initialData }: { initialData: ReportData
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-navy-500">Business Reports</h1>
-          <p className="text-text-secondary mt-1 font-medium">
+          <p className="text-text-secondary mt-1 font-medium text-sm">
             Financial performance from <span className="text-navy-900 font-bold">{data.range.startDate}</span> to <span className="text-navy-900 font-bold">{data.range.endDate}</span>
           </p>
         </div>
@@ -178,18 +180,18 @@ export default function ReportsClient({ initialData }: { initialData: ReportData
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl border border-border shadow-sm p-1.5 flex gap-1 w-fit">
+      <div className="bg-white rounded-2xl border border-border shadow-sm p-1.5 flex gap-1 w-full max-w-2xl">
         {[
           { id: "overview", label: "Overview", icon: BarChart3 },
           { id: "bookings", label: "Booking History", icon: Calendar },
-          { id: "restaurant", label: "Restaurant", icon: TrendingUp },
+          { id: "restaurant", label: "Restaurant", icon: UtensilsCrossed },
           { id: "inventory", label: "Inventory", icon: Boxes },
         ].map((t) => (
           <button
             key={t.id}
             onClick={() => setActiveTab(t.id as any)}
             className={clsx(
-              "flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all",
+              "flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all",
               activeTab === t.id ? "bg-navy-500 text-white shadow-md" : "text-text-secondary hover:bg-bg"
             )}
           >
@@ -217,7 +219,7 @@ export default function ReportsClient({ initialData }: { initialData: ReportData
                      <div className="flex-1 h-3 bg-bg rounded-full overflow-hidden">
                         <div 
                           className="h-full bg-navy-500/80 rounded-full" 
-                          style={{ width: `${(item.total / data.billedTotal) * 100}%` }}
+                          style={{ width: `${(item.total / (data.billedTotal || 1)) * 100}%` }}
                         />
                      </div>
                      <span className="text-xs font-bold text-navy-900 w-24 text-right">{formatMoney(item.total)}</span>
@@ -227,7 +229,10 @@ export default function ReportsClient({ initialData }: { initialData: ReportData
           </div>
 
           <div className="card">
-             <h3 className="mb-4">Collection Methods</h3>
+             <h3 className="mb-4 flex items-center gap-2">
+                <div className="w-1.5 h-4 bg-gold-500 rounded-full" />
+                Collection Methods
+             </h3>
              <div className="space-y-3">
                 {data.collected.map(item => (
                    <div key={item.method} className="flex justify-between items-center p-3 bg-bg/50 rounded-xl border border-border/40">
@@ -235,6 +240,9 @@ export default function ReportsClient({ initialData }: { initialData: ReportData
                       <span className="text-sm font-black text-navy-500">{formatMoney(item.total)}</span>
                    </div>
                 ))}
+                {data.collected.length === 0 && (
+                   <div className="py-6 text-center text-xs text-text-muted italic">No collections in this period</div>
+                )}
              </div>
           </div>
         </div>
@@ -246,80 +254,185 @@ export default function ReportsClient({ initialData }: { initialData: ReportData
               <StatCard mini label="Bookings" value={data.bookingSummary.totalBookings.toString()} />
               <StatCard mini label="Accom." value={formatMoney(data.bookingSummary.bookedAccommodation)} />
               <StatCard mini label="Cancelled" value={formatMoney(data.bookingSummary.cancelledAccommodation)} color="text-danger" />
-              <StatCard mini label="Total" value={formatMoney(data.bookingSummary.totalBilled)} />
-              <StatCard mini label="Paid" value={formatMoney(data.bookingSummary.amountPaid)} color="text-success" />
-              <StatCard mini label="Due" value={formatMoney(data.bookingSummary.balanceDue)} color="text-warning" />
+              <StatCard mini label="Total Spend" value={formatMoney(data.bookingSummary.totalBilled)} />
+              <StatCard mini label="Amt Paid" value={formatMoney(data.bookingSummary.amountPaid)} color="text-success" />
+              <StatCard mini label="Bal Due" value={formatMoney(data.bookingSummary.balanceDue)} color="text-warning" />
            </div>
 
            <div className="table-container shadow-sm border-border/60">
-              <table className="premium-table">
-                <thead>
-                  <tr>
-                    <th>Ref / Guest</th>
-                    <th>Dates / Rooms</th>
-                    <th>Status</th>
-                    <th className="text-right">Booked</th>
-                    <th className="text-right">Cancelled</th>
-                    <th className="text-right">Total</th>
-                    <th className="text-right">Paid</th>
-                    <th className="text-right">Balance</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.bookingHistory.map(b => (
-                    <tr key={b.id}>
-                      <td>
-                        <p className="font-bold text-navy-500">{b.code}</p>
-                        <p className="text-[11px] text-text-secondary uppercase font-medium">{b.guest.fullName}</p>
-                      </td>
-                      <td>
-                        <p className="font-medium text-xs">{formatDate(b.checkInDate)} – {formatDate(b.checkOutDate)}</p>
-                        <p className="text-[10px] text-text-muted italic">{b.rooms.map(r => r.number).join(", ") || "No room"}</p>
-                      </td>
-                      <td>
-                        <span className={clsx("badge", STATUS_BADGE[b.status] || "bg-bg")}>
-                          {humanize(b.status)}
-                        </span>
-                      </td>
-                      <td className="text-right font-medium text-xs">{formatMoney(b.bookedAccommodation)}</td>
-                      <td className={clsx("text-right font-bold text-xs", b.cancelledAccommodation > 0 ? "text-danger" : "text-text-muted opacity-40")}>
-                        {formatMoney(b.cancelledAccommodation)}
-                      </td>
-                      <td className="text-right font-black text-xs text-navy-900">{formatMoney(b.totalBilled)}</td>
-                      <td className="text-right font-bold text-xs text-success">{formatMoney(b.amountPaid)}</td>
-                      <td className={clsx("text-right font-black text-xs", b.balance > 0 ? "text-danger" : "text-success")}>
-                        {formatMoney(b.balance)}
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="premium-table">
+                  <thead>
+                    <tr>
+                      <th>Ref / Guest</th>
+                      <th>Dates / Rooms</th>
+                      <th>Status</th>
+                      <th className="text-right">Booked</th>
+                      <th className="text-right">Cancelled</th>
+                      <th className="text-right">Total</th>
+                      <th className="text-right">Paid</th>
+                      <th className="text-right">Balance</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {data.bookingHistory.map(b => (
+                      <tr key={b.id}>
+                        <td>
+                          <p className="font-bold text-navy-500">{b.code}</p>
+                          <p className="text-[11px] text-text-secondary uppercase font-medium">{b.guest.fullName}</p>
+                        </td>
+                        <td>
+                          <p className="font-medium text-xs">{formatDate(b.checkInDate)} – {formatDate(b.checkOutDate)}</p>
+                          <p className="text-[10px] text-text-muted italic">{b.rooms.map(r => r.number).join(", ") || "No room"}</p>
+                        </td>
+                        <td>
+                          <span className={clsx("badge", STATUS_BADGE[b.status] || "bg-bg")}>
+                            {humanize(b.status)}
+                          </span>
+                        </td>
+                        <td className="text-right font-medium text-xs">{formatMoney(b.bookedAccommodation)}</td>
+                        <td className={clsx("text-right font-bold text-xs", b.cancelledAccommodation > 0 ? "text-danger" : "text-text-muted opacity-40")}>
+                          {formatMoney(b.cancelledAccommodation)}
+                        </td>
+                        <td className="text-right font-black text-xs text-navy-900">{formatMoney(b.totalBilled)}</td>
+                        <td className="text-right font-bold text-xs text-success">{formatMoney(b.amountPaid)}</td>
+                        <td className={clsx("text-right font-black text-xs", b.balance > 0 ? "text-danger" : "text-success")}>
+                          {formatMoney(b.balance)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {data.bookingHistory.length === 0 && (
+                  <div className="py-12 text-center text-sm text-text-muted italic">No bookings found for this range</div>
+                )}
+              </div>
            </div>
         </div>
       )}
-      
-      {/* Rest of tabs follow same table container + premium-table pattern */}
+
+      {activeTab === "restaurant" && (
+        <div className="space-y-6">
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <StatCard icon={TrendingUp} label="Total Sales" value={formatMoney(data.restaurant.summary.revenue)} color="text-navy-600" bg="bg-navy-50" />
+              <StatCard icon={CheckCircle2} label="Items Sold" value={data.restaurant.summary.itemsSold.toLocaleString()} color="text-success" bg="bg-success-bg" />
+              <StatCard icon={Wallet} label="Paid Now" value={formatMoney(data.restaurant.summary.payNowRevenue)} color="text-teal-600" bg="bg-teal-50" />
+              <StatCard icon={Calendar} label="Room Charges" value={formatMoney(data.restaurant.summary.roomChargeRevenue)} color="text-gold-600" bg="bg-gold-50" />
+           </div>
+
+           <div className="table-container shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="premium-table">
+                  <thead>
+                    <tr>
+                      <th>Date / Time</th>
+                      <th>Menu Item</th>
+                      <th>Guest / Room</th>
+                      <th className="text-center">Qty</th>
+                      <th className="text-right">Unit Price</th>
+                      <th className="text-right">Total</th>
+                      <th>Channel</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.restaurant.sales.map(s => (
+                      <tr key={s.id}>
+                        <td className="text-xs text-text-muted">{new Date(s.createdAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}</td>
+                        <td className="font-bold text-navy-700">{s.itemName}</td>
+                        <td>
+                           <p className="text-xs font-medium">{s.guestName}</p>
+                           <p className="text-[10px] text-text-muted italic">{s.roomNumbers.length > 0 ? `Room ${s.roomNumbers.join(", ")}` : "Walk-in"}</p>
+                        </td>
+                        <td className="text-center font-bold text-navy-500">{s.quantity}</td>
+                        <td className="text-right text-xs">{formatMoney(s.unitPrice)}</td>
+                        <td className="text-right font-black text-navy-900">{formatMoney(s.total)}</td>
+                        <td>
+                           <span className={clsx("badge", s.channel === "PAY_NOW" ? "bg-success-bg text-success-text" : "bg-teal-50 text-teal-700")}>
+                             {s.channel === "PAY_NOW" ? "Paid Now" : "Charged"}
+                           </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {data.restaurant.sales.length === 0 && (
+                   <div className="py-12 text-center text-sm text-text-muted italic">No restaurant sales recorded</div>
+                )}
+              </div>
+           </div>
+        </div>
+      )}
+
+      {activeTab === "inventory" && (
+        <div className="space-y-6">
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <StatCard icon={Boxes} label="Active Items" value={data.inventory.summary.activeItems.toString()} color="text-navy-600" bg="bg-navy-50" />
+              <StatCard icon={TrendingUp} label="Total Value" value={formatMoney(data.inventory.summary.currentStockValue)} color="text-success" bg="bg-success-bg" />
+              <StatCard icon={PackageSearch} label="Usage Cost" value={formatMoney(data.inventory.summary.usageCost)} color="text-teal-600" bg="bg-teal-50" />
+              <StatCard icon={AlertCircle} label="Wastage" value={formatMoney(data.inventory.summary.wastageCost)} color="text-danger" bg="bg-danger-bg" />
+           </div>
+
+           <div className="table-container shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="premium-table">
+                  <thead>
+                    <tr>
+                      <th>SKU / Name</th>
+                      <th>Category</th>
+                      <th className="text-right">Stock</th>
+                      <th>Status</th>
+                      <th className="text-right">Usage</th>
+                      <th className="text-right">Wastage</th>
+                      <th className="text-right">Current Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.inventory.items.map(i => (
+                      <tr key={i.id}>
+                        <td>
+                           <p className="text-[10px] font-black text-text-muted tracking-widest">{i.sku}</p>
+                           <p className="font-bold text-navy-700">{i.name}</p>
+                        </td>
+                        <td className="text-xs uppercase font-medium text-text-secondary">{i.category}</td>
+                        <td className="text-right font-black text-navy-600">{formatQty(i.currentStock, i.unit)}</td>
+                        <td>
+                           <span className={clsx("badge", STOCK_STATUS_BADGE_CLASS[i.status])}>
+                             {STOCK_STATUS_LABEL[i.status]}
+                           </span>
+                        </td>
+                        <td className="text-right text-xs font-medium text-navy-500">{formatMoney(i.usageCost)}</td>
+                        <td className="text-right text-xs font-medium text-danger">{formatMoney(i.wastageCost)}</td>
+                        <td className="text-right font-black text-navy-900">{formatMoney(i.currentValue)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function StatCard({ icon: Icon, label, value, color = "text-navy-500", bg = "bg-white", mini = false }: any) {
+function StatCard({ icon: Icon, label, value, color = "text-navy-500", bg = "bg-white", mini = false, note }: any) {
   if (mini) return (
     <div className="card p-4 border-border/50">
-       <p className="text-[10px] font-black text-text-muted uppercase tracking-widest">{label}</p>
-       <p className={clsx("text-sm font-black mt-1", color)}>{value}</p>
+       <p className="text-[10px] font-black text-text-muted uppercase tracking-[0.15em]">{label}</p>
+       <p className={clsx("text-sm font-black mt-1.5", color)}>{value}</p>
     </div>
   );
 
   return (
     <div className="card border-border/50 group hover:border-navy-200">
       <div className="flex items-center gap-4">
-        <div className={clsx("p-3 rounded-2xl transition-transform group-hover:scale-110", bg, color)}>
+        <div className={clsx("p-3.5 rounded-2xl transition-all duration-300 group-hover:scale-110 group-hover:rotate-3 shadow-sm", bg, color)}>
           <Icon size={24} />
         </div>
         <div>
-          <p className="text-xs font-bold text-text-muted uppercase tracking-widest">{label}</p>
+          <p className="text-xs font-bold text-text-muted uppercase tracking-[0.15em]">{label}</p>
           <p className={clsx("text-xl font-black mt-0.5", color)}>{value}</p>
+          {note && <p className="text-[10px] text-text-muted mt-0.5 font-medium">{note}</p>}
         </div>
       </div>
     </div>
