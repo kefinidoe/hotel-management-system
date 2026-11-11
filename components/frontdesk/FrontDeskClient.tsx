@@ -1,24 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { UserPlus } from "lucide-react";
+import { 
+  Users, 
+  LogIn, 
+  LogOut, 
+  BedDouble, 
+  Search, 
+  Plus, 
+  MoreHorizontal, 
+  AlertCircle 
+} from "lucide-react";
+import clsx from "clsx";
 import type { RoleName } from "@prisma/client";
-import CreateReservationModal from "@/components/reservations/CreateReservationModal";
-import FolioModal from "./FolioModal";
-import CheckInModal from "./CheckInModal";
-import ExtendStayModal from "./ExtendStayModal";
 import { hasRole, ROLE_GROUPS } from "@/lib/permissions";
-import type { RoomStatus } from "@prisma/client";
-import {
-  isBookableToday,
-  ROOM_STATUS_HINTS,
-  ROOM_STATUS_LABELS,
-  roomStatusClasses,
-  roomStatusDotClasses,
-  summariseRooms,
-} from "@/lib/room-status";
 import { formatDisplayDate } from "@/lib/dates";
+import CreateReservationModal from "@/components/reservations/CreateReservationModal";
+import CheckInModal from "@/components/frontdesk/CheckInModal";
+import ExtendStayModal from "@/components/frontdesk/ExtendStayModal";
+import FolioModal from "@/components/frontdesk/FolioModal";
 
 type ResRow = {
   id: string;
@@ -36,11 +36,12 @@ type ResRow = {
   balance: number;
   nightlyRateTotal: number;
 };
-type Room = {
+
+type RoomRow = {
   id: string;
   number: string;
   floor: string | null;
-  status: RoomStatus;
+  status: string;
   roomTypeName: string;
   baseRate: number;
 };
@@ -51,6 +52,12 @@ function money(value: number) {
     maximumFractionDigits: 2,
   })}`;
 }
+
+const TAB_ICONS = {
+  arrivals: LogIn,
+  departures: LogOut,
+  inHouse: BedDouble,
+};
 
 export default function FrontDeskClient({
   currentUserRole,
@@ -65,345 +72,205 @@ export default function FrontDeskClient({
   departures: ResRow[];
   inHouse: ResRow[];
   availableRoomsCount: number;
-  rooms: Room[];
+  rooms: RoomRow[];
 }) {
-  const router = useRouter();
-  const canManageStays = hasRole(currentUserRole, ROLE_GROUPS.GUEST_STAYS);
-  const canOverrideBalance = hasRole(currentUserRole, ROLE_GROUPS.MANAGEMENT);
-  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"arrivals" | "departures" | "inHouse">("arrivals");
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [checkInReservation, setCheckInReservation] = useState<ResRow | null>(null);
   const [extendReservation, setExtendReservation] = useState<ResRow | null>(null);
   const [openFolio, setOpenFolio] = useState<{ folioId: string; reservationId: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const roomSummary = summariseRooms(rooms);
-  const roomsByFloor = rooms.reduce<Record<string, Room[]>>((groups, room) => {
-    const floor = room.floor ?? "Other";
-    (groups[floor] ??= []).push(room);
-    return groups;
-  }, {});
+  const canManageStays = hasRole(currentUserRole, ROLE_GROUPS.GUEST_STAYS);
+  const canOverrideBalance = hasRole(currentUserRole, ROLE_GROUPS.MANAGEMENT);
 
-  function refresh() {
-    router.refresh();
-  }
+  const activeList = {
+    arrivals,
+    departures,
+    inHouse,
+  }[activeTab];
+
+  const refresh = () => {
+    window.location.reload();
+  };
 
   return (
-    <div>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-7">
+    <div className="animate-slide-up space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-3">
-            <div className="h-11 w-11 rounded-2xl bg-primary-50 border border-primary-100 flex items-center justify-center text-primary-700 shadow-sm">
-              <span className="text-lg">⌂</span>
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">Front Desk</h1>
-              <p className="text-text-secondary text-sm mt-0.5">
-                Manage arrivals, departures and in-house guests.
-              </p>
-            </div>
-          </div>
-          <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-primary-100 bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-700">
-            <span className="h-2 w-2 rounded-full bg-primary-500" />
-            {availableRoomsCount} rooms available today
-            <span className="text-primary-300">•</span>
-            Check-out at 10:00 AM
-          </div>
+          <h1 className="text-3xl font-bold text-navy-500">Front Desk</h1>
+          <p className="text-text-secondary mt-1 font-medium">
+            Manage daily operations and guest movements.
+          </p>
         </div>
+        <div className="flex items-center gap-3">
+          <div className="bg-white border border-border rounded-xl px-4 py-2.5 shadow-sm flex items-center gap-3">
+             <div className="w-2.5 h-2.5 rounded-full bg-teal-500 shadow-[0_0_8px_rgba(28,152,158,0.5)] animate-pulse" />
+             <span className="text-sm font-bold text-navy-600">{availableRoomsCount} Rooms Available</span>
+          </div>
+          {canManageStays && (
+            <button onClick={() => setWalkInOpen(true)} className="btn-teal">
+              <Plus size={18} />
+              New Walk-in
+            </button>
+          )}
+        </div>
+      </div>
 
-        {canManageStays && (
-          <button
-            onClick={() => setWalkInOpen(true)}
-            className="btn-primary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
-          >
-            <UserPlus size={17} /> Walk-in
-          </button>
-        )}
+      <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden p-1.5 flex gap-1 w-full max-w-lg">
+        {[
+          { id: "arrivals", label: "Arrivals", count: arrivals.length, color: "text-navy-500", activeBg: "bg-navy-50" },
+          { id: "departures", label: "Departures", count: departures.length, color: "text-gold-600", activeBg: "bg-gold-50" },
+          { id: "inHouse", label: "In-house", count: inHouse.length, color: "text-teal-600", activeBg: "bg-teal-50" },
+        ].map((t) => {
+          const Icon = TAB_ICONS[t.id as keyof typeof TAB_ICONS];
+          const active = activeTab === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setActiveTab(t.id as any)}
+              className={clsx(
+                "flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all duration-200",
+                active 
+                  ? `${t.activeBg} ${t.color} shadow-sm border border-border/40` 
+                  : "text-text-secondary hover:bg-bg"
+              )}
+            >
+              <Icon size={18} strokeWidth={active ? 2.5 : 1.8} />
+              {t.label}
+              <span className={clsx(
+                "ml-1 px-1.5 py-0.5 rounded-lg text-[10px] border font-black tracking-tighter transition-colors",
+                active ? "bg-white border-white/50" : "bg-bg border-border"
+              )}>
+                {t.count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {error && (
-        <p className="text-sm text-danger bg-danger/5 border border-danger/20 rounded-2xl px-4 py-3 mb-5 shadow-sm">
-          {error}
-        </p>
+        <div className="bg-danger-bg border border-danger/20 p-4 rounded-xl flex items-center gap-3 text-danger shadow-sm">
+          <AlertCircle size={20} />
+          <p className="text-sm font-bold">{error}</p>
+          <button onClick={() => setError(null)} className="ml-auto text-xs font-black uppercase underline decoration-2 underline-offset-4">Dismiss</button>
+        </div>
       )}
 
-      <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm mb-5">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-          <div>
-            <h2 className="text-base font-bold">Room Status</h2>
-            <p className="text-xs text-text-secondary mt-0.5">
-              {roomSummary.bookable} of {roomSummary.total} rooms free and clean right now
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={refresh}
-            className="text-xs font-medium rounded-control border border-border px-3 py-1.5 hover:bg-bg"
-          >
-            Refresh
-          </button>
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        {activeList.map((r) => {
+          const isDeparture = activeTab === "departures";
+          const isArrival = activeTab === "arrivals";
+          const isInHouse = activeTab === "inHouse";
 
-        <div className="flex flex-wrap gap-x-4 gap-y-1.5 mb-4">
-          {Array.from(roomSummary.counts.entries()).map(([status, count]) => (
-            <span key={status} className="inline-flex items-center gap-1.5 text-xs text-text-secondary">
-              <span className={`h-2 w-2 rounded-full ${roomStatusDotClasses(status)}`} />
-              {ROOM_STATUS_LABELS[status]}: <span className="font-semibold">{count}</span>
-            </span>
-          ))}
-        </div>
-
-        <div className="space-y-3">
-          {Object.entries(roomsByFloor)
-            .sort(([left], [right]) => left.localeCompare(right, undefined, { numeric: true }))
-            .map(([floor, floorRooms]) => (
-              <div key={floor}>
-                <p className="text-xs font-medium uppercase tracking-wide text-text-muted mb-1.5">
-                  {floor === "Other" ? "Other rooms" : `Floor ${floor}`}
-                </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-                  {floorRooms.map((room) => (
-                    <div
-                      key={room.id}
-                      title={ROOM_STATUS_HINTS[room.status]}
-                      className={`rounded-control border px-2.5 py-1.5 ${roomStatusClasses(room.status)}`}
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span className={`h-1.5 w-1.5 rounded-full ${roomStatusDotClasses(room.status)}`} />
-                        <span className="text-sm font-semibold text-text-primary">{room.number}</span>
-                      </div>
-                      <p className="text-[11px] font-medium mt-0.5">{ROOM_STATUS_LABELS[room.status]}</p>
-                    </div>
-                  ))}
+          return (
+            <div
+              key={r.id}
+              className={clsx(
+                "card-interactive flex flex-col group h-full",
+                r.isOverdue && isDeparture ? "ring-2 ring-danger ring-offset-2" : ""
+              )}
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div className="min-w-0">
+                  <h3 className="font-bold text-lg leading-tight truncate text-navy-500">{r.guestName}</h3>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className="text-xs font-bold text-text-muted bg-bg px-2 py-0.5 rounded-lg border border-border">
+                      Room {r.roomNumbers}
+                    </span>
+                    <span className="text-xs font-medium text-text-secondary uppercase tracking-widest text-[10px]">
+                      {r.code}
+                    </span>
+                  </div>
+                </div>
+                <div className={clsx(
+                  "p-2 rounded-xl shadow-sm",
+                  isArrival ? "bg-navy-50 text-navy-600" : isDeparture ? "bg-gold-50 text-gold-600" : "bg-teal-50 text-teal-600"
+                )}>
+                  {isArrival ? <LogIn size={20} /> : isDeparture ? <LogOut size={20} /> : <BedDouble size={20} />}
                 </div>
               </div>
-            ))}
-        </div>
-      </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-4 pb-3 border-b border-border">
-            <div>
-              <h2 className="text-base font-bold">Arrivals</h2>
-              <p className="text-xs text-text-secondary mt-0.5">Guests checking in today</p>
-            </div>
-            <span className="min-w-8 h-8 px-2 rounded-full bg-primary-50 text-primary-700 flex items-center justify-center text-xs font-bold">
-              {arrivals.length}
-            </span>
-          </div>
+              {isDeparture && r.checkoutDeadline && (
+                <div className={clsx(
+                  "mb-4 px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border",
+                  r.isOverdue 
+                    ? "bg-danger-bg text-danger border-danger/20 animate-pulse" 
+                    : "bg-bg text-text-secondary border-border"
+                )}>
+                  <AlertCircle size={14} className={r.isOverdue ? "text-danger" : "text-text-muted"} />
+                  {r.isOverdue ? "CHECKOUT OVERDUE" : `Checkout ends at ${new Date(r.checkoutDeadline).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
+                </div>
+              )}
 
-          <div className="space-y-3">
-            {arrivals.map((r) => (
-              <div
-                key={r.id}
-                className="group rounded-2xl border border-border bg-bg/40 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary-200 hover:shadow-md"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-semibold truncate">{r.guestName}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <p className="text-xs text-text-secondary">
-                        Room {r.roomNumbers} <span className="mx-1">·</span> {r.code}
-                      </p>
-                      {r.checkoutDeadline && (
-                        <p className="text-[10px] text-text-muted bg-bg px-1.5 py-0.5 rounded border border-border">
-                          Ends {new Date(r.checkoutDeadline).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <span className="shrink-0 rounded-full bg-primary-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-primary-700">
-                    Arrival
+              <div className="bg-bg/40 border border-border/50 rounded-xl p-3 flex flex-col gap-2 mb-6 mt-auto">
+                <div className="flex justify-between items-center text-[11px] font-bold">
+                  <span className="text-text-muted uppercase tracking-wider">Required</span>
+                  <span className="text-navy-500">{money(r.requiredAmount)}</span>
+                </div>
+                <div className="flex justify-between items-center text-[11px] font-bold">
+                  <span className="text-text-muted uppercase tracking-wider">Paid</span>
+                  <span className="text-success">{money(r.paidAmount)}</span>
+                </div>
+                <div className="h-px bg-border/50 my-1" />
+                <div className="flex justify-between items-center">
+                  <span className="text-[11px] font-black uppercase text-text-muted tracking-widest">Balance</span>
+                  <span className={clsx(
+                    "text-sm font-black",
+                    r.balance > 0 ? "text-danger" : "text-success"
+                  )}>
+                    {money(r.balance)}
                   </span>
                 </div>
+              </div>
 
-                <div className="mt-3 flex items-center justify-between rounded-control bg-surface px-3 py-2 text-xs">
-                  <span className="text-text-secondary">Accommodation required</span>
-                  <span className="font-semibold">{money(r.requiredAmount)}</span>
-                </div>
-
-                {canManageStays && (
+              <div className="grid gap-2">
+                {isArrival && canManageStays && (
                   <button
-                    onClick={() => {
-                      setError(null);
-                      setCheckInReservation(r);
-                    }}
-                    className="btn-primary w-full mt-4 transition-all duration-200 group-hover:shadow-sm"
+                    onClick={() => setCheckInReservation(r)}
+                    className="btn-primary w-full shadow-md"
                   >
-                    Check In
+                    Check In Guest
+                  </button>
+                )}
+                
+                {(isDeparture || isInHouse) && (
+                  <button
+                    onClick={() => r.openFolioId ? setOpenFolio({ folioId: r.openFolioId, reservationId: r.id }) : setError("Folio missing.")}
+                    className={clsx(
+                      "w-full font-bold text-sm py-2.5 rounded-xl border transition-all duration-200",
+                      isDeparture 
+                        ? "bg-gold-500 text-white border-gold-600 hover:bg-gold-600 shadow-md active:scale-95" 
+                        : "bg-white border-border text-navy-500 hover:bg-bg"
+                    )}
+                  >
+                    {isDeparture ? "Check Out Now" : "View Folio"}
+                  </button>
+                )}
+
+                {isInHouse && canManageStays && (
+                  <button
+                    onClick={() => { setError(null); setExtendReservation(r); }}
+                    className="btn-teal w-full shadow-sm"
+                  >
+                    <Plus size={16} />
+                    Add Days
                   </button>
                 )}
               </div>
-            ))}
-            {arrivals.length === 0 && (
-              <div className="rounded-2xl border border-dashed border-border px-4 py-8 text-center">
-                <p className="text-sm font-medium text-text-primary">No arrivals today</p>
-                <p className="text-xs text-text-secondary mt-1">You’re all caught up.</p>
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-4 pb-3 border-b border-border">
-            <div>
-              <h2 className="text-base font-bold">Departures</h2>
-              <p className="text-xs text-text-secondary mt-0.5">Guests checking out today</p>
             </div>
-            <span className="min-w-8 h-8 px-2 rounded-full bg-champagne-50 text-champagne-500 flex items-center justify-center text-xs font-bold">
-              {departures.length}
-            </span>
+          );
+        })}
+
+        {activeList.length === 0 && (
+          <div className="col-span-full card py-16 flex flex-col items-center justify-center border-dashed border-2 opacity-50 bg-transparent">
+             <div className="p-4 rounded-full bg-bg mb-4">
+                <TAB_ICONS[activeTab] size={40} className="text-text-muted" />
+             </div>
+             <p className="font-bold text-text-primary">No guests found</p>
+             <p className="text-sm text-text-secondary mt-1">There are no {activeTab.replace(/([A-Z])/g, ' $1').toLowerCase()} scheduled.</p>
           </div>
-
-          <div className="space-y-3">
-            {departures.map((r) => (
-              <div
-                key={r.id}
-                className="group rounded-2xl border border-border bg-bg/40 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary-200 hover:shadow-md"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-semibold truncate">{r.guestName}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <p className="text-xs text-text-secondary">
-                        Room {r.roomNumbers} <span className="mx-1">·</span> {r.code}
-                      </p>
-                      {r.checkoutDeadline && (
-                        <p className="text-[10px] text-text-muted bg-bg px-1.5 py-0.5 rounded border border-border">
-                          Ends {new Date(r.checkoutDeadline).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <span className="shrink-0 rounded-full bg-champagne-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-champagne-500">
-                    Departure
-                  </span>
-                </div>
-
-                {r.isOverdue && (
-                  <div className="mt-3 flex items-center gap-2 rounded-xl bg-danger/10 border border-danger/20 p-2.5 text-danger animate-pulse">
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-danger text-white text-[10px] font-bold">!</span>
-                    <p className="text-[11px] font-semibold uppercase tracking-wider">Checkout Overdue</p>
-                  </div>
-                )}
-                <div className="mt-3 grid grid-cols-3 gap-2 rounded-control bg-surface px-3 py-2 text-xs">
-                  <div>
-                    <p className="text-text-muted">Required</p>
-                    <p className="font-medium">{money(r.requiredAmount)}</p>
-                  </div>
-                  <div>
-                    <p className="text-text-muted">Paid</p>
-                    <p className="font-medium text-success">{money(r.paidAmount)}</p>
-                  </div>
-                  <div>
-                    <p className="text-text-muted">Balance</p>
-                    <p className={r.balance > 0 ? "font-semibold text-danger" : "font-semibold text-success"}>
-                      {money(r.balance)}
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() =>
-                    r.openFolioId
-                      ? setOpenFolio({ folioId: r.openFolioId, reservationId: r.id })
-                      : setError("No open folio found for this reservation.")
-                  }
-                  className="btn-secondary w-full mt-4 transition-all duration-200 group-hover:border-primary-200"
-                >
-                  View Folio / Check Out
-                </button>
-              </div>
-            ))}
-            {departures.length === 0 && (
-              <div className="rounded-2xl border border-dashed border-border px-4 py-8 text-center">
-                <p className="text-sm font-medium text-text-primary">No departures today</p>
-                <p className="text-xs text-text-secondary mt-1">No check-outs are scheduled.</p>
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-4 pb-3 border-b border-border">
-            <div>
-              <h2 className="text-base font-bold">In-house Guests</h2>
-              <p className="text-xs text-text-secondary mt-0.5">Currently staying at the hotel</p>
-            </div>
-            <span className="min-w-8 h-8 px-2 rounded-full bg-info/10 text-info flex items-center justify-center text-xs font-bold">
-              {inHouse.length}
-            </span>
-          </div>
-
-          <div className="space-y-3">
-            {inHouse.map((r) => (
-              <div
-                key={r.id}
-                className="group rounded-2xl border border-border bg-bg/40 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary-200 hover:shadow-md"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-semibold truncate">{r.guestName}</p>
-                    <p className="text-xs text-text-secondary mt-1">
-                      Room {r.roomNumbers} <span className="mx-1">·</span> until{" "}
-                      {formatDisplayDate(r.checkOutDate)}
-                    </p>
-                  </div>
-                  <span className="shrink-0 rounded-full bg-info/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-info">
-                    In-house
-                  </span>
-                </div>
-
-                <div className="mt-3 grid grid-cols-3 gap-2 rounded-control bg-surface px-3 py-2 text-xs">
-                  <div>
-                    <p className="text-text-muted">Required</p>
-                    <p className="font-medium">{money(r.requiredAmount)}</p>
-                  </div>
-                  <div>
-                    <p className="text-text-muted">Paid</p>
-                    <p className="font-medium text-success">{money(r.paidAmount)}</p>
-                  </div>
-                  <div>
-                    <p className="text-text-muted">Balance</p>
-                    <p className={r.balance > 0 ? "font-semibold text-danger" : "font-semibold text-success"}>
-                      {money(r.balance)}
-                    </p>
-                  </div>
-                </div>
-
-                <div className={`mt-4 grid gap-2 ${canManageStays ? "grid-cols-2" : "grid-cols-1"}`}>
-                  <button
-                    onClick={() =>
-                      r.openFolioId
-                        ? setOpenFolio({ folioId: r.openFolioId, reservationId: r.id })
-                        : setError("No open folio found for this reservation.")
-                    }
-                    className="btn-secondary w-full transition-all duration-200 group-hover:border-primary-200"
-                  >
-                    View Folio
-                  </button>
-                  {canManageStays && (
-                    <button
-                      onClick={() => {
-                        setError(null);
-                        setExtendReservation(r);
-                      }}
-                      className="btn-primary w-full"
-                    >
-                      Add Days
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-            {inHouse.length === 0 && (
-              <div className="rounded-2xl border border-dashed border-border px-4 py-8 text-center">
-                <p className="text-sm font-medium text-text-primary">No guests currently in-house</p>
-                <p className="text-xs text-text-secondary mt-1">Active stays will appear here.</p>
-              </div>
-            )}
-          </div>
-        </section>
+        )}
       </div>
 
       {canManageStays && walkInOpen && rooms.length > 0 && (

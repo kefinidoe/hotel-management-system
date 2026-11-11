@@ -30,6 +30,7 @@ type NavItem = {
   icon: React.ElementType;
   roles: readonly RoleName[];
 };
+
 type NavGroup = { title: string; items: NavItem[] };
 
 const NAV: NavGroup[] = [
@@ -84,14 +85,14 @@ export default function Sidebar({ userRole }: { userRole: RoleName }) {
   return (
     <aside
       className={clsx(
-        "h-screen sticky top-0 flex flex-col border-r border-sidebar-border bg-sidebar-bg transition-all",
-        collapsed ? "w-[76px]" : "w-64"
+        "h-screen sticky top-0 flex flex-col border-r border-sidebar-border bg-sidebar-bg transition-all duration-300 z-30 shadow-xl",
+        collapsed ? "w-[80px]" : "w-64"
       )}
     >
       <div
         className={clsx(
           "flex items-center justify-center border-b border-sidebar-border transition-all",
-          collapsed ? "h-20 px-2" : "h-28 px-3"
+          collapsed ? "h-20" : "h-28"
         )}
       >
         <Link
@@ -106,24 +107,24 @@ export default function Sidebar({ userRole }: { userRole: RoleName }) {
             height={312}
             priority
             className={clsx(
-              "h-auto shrink-0 object-contain",
-              collapsed ? "w-14" : "w-24"
+              "h-auto shrink-0 object-contain transition-all duration-300",
+              collapsed ? "w-12" : "w-20 filter drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]"
             )}
           />
         </Link>
       </div>
 
-      <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-6">
+      <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-8 scrollbar-hide">
         {visibleGroups.map((group) => (
           <div key={group.title}>
             {!collapsed && (
-              <p className="px-3 mb-1.5 text-xs font-medium uppercase tracking-wide text-sidebar-textMuted">
+              <p className="px-4 mb-3 text-[10px] font-bold uppercase tracking-[0.15em] text-sidebar-textMuted opacity-50">
                 {group.title}
               </p>
             )}
-            <div className="space-y-0.5">
+            <div className="space-y-1">
               {group.items.map((item) => {
-                const active = pathname === item.href;
+                const active = pathname === item.href || (pathname.startsWith(item.href) && item.href !== "/dashboard");
                 const Icon = item.icon;
                 return (
                   <Link
@@ -131,14 +132,17 @@ export default function Sidebar({ userRole }: { userRole: RoleName }) {
                     href={item.href}
                     title={collapsed ? item.label : undefined}
                     className={clsx(
-                      "flex items-center gap-3 rounded-control px-3 py-2 text-sm font-medium transition-colors border-l-2",
+                      "flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200 group relative",
                       active
-                        ? "bg-white/10 text-sidebar-active border-sidebar-active"
-                        : "text-sidebar-textMuted border-transparent hover:bg-sidebar-hover hover:text-sidebar-text"
+                        ? "bg-sidebar-active text-white shadow-[0_4px_12px_rgba(28,152,158,0.3)]"
+                        : "text-sidebar-textMuted hover:bg-sidebar-hover hover:text-sidebar-text"
                     )}
                   >
-                    <Icon size={18} strokeWidth={1.8} className="shrink-0" />
+                    <Icon size={19} strokeWidth={active ? 2.5 : 1.8} className={clsx("shrink-0", active ? "text-white" : "text-sidebar-textMuted group-hover:text-white")} />
                     {!collapsed && <span>{item.label}</span>}
+                    {active && !collapsed && (
+                      <span className="absolute right-2 w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_8px_white]" />
+                    )}
                   </Link>
                 );
               })}
@@ -147,14 +151,20 @@ export default function Sidebar({ userRole }: { userRole: RoleName }) {
         ))}
       </nav>
 
-      <button
-        onClick={() => setCollapsed((c) => !c)}
-        className="flex items-center gap-2 px-4 py-3 border-t border-sidebar-border text-sidebar-textMuted
-                   hover:text-sidebar-text text-sm"
-      >
-        {collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
-        {!collapsed && <span>Collapse</span>}
-      </button>
+      <div className="p-3 border-t border-sidebar-border">
+        <button
+          onClick={() => setCollapsed((c) => !c)}
+          className="flex w-full items-center justify-center gap-2 py-3 rounded-xl text-sidebar-textMuted 
+                     hover:bg-sidebar-hover hover:text-sidebar-text transition-all duration-200 group"
+        >
+          {collapsed ? <ChevronsRight size={20} /> : (
+            <>
+              <ChevronsLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
+              <span className="text-xs font-semibold uppercase tracking-wider">Collapse Menu</span>
+            </>
+          )}
+        </button>
+      </div>
     </aside>
   );
 }

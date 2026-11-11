@@ -5,43 +5,115 @@
 @layer base {
   html {
     font-family: "Inter", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   body {
-    @apply bg-bg text-text-primary antialiased;
+    @apply bg-bg text-text-primary;
   }
-  h1 { @apply text-2xl font-semibold tracking-tight; }
-  h2 { @apply text-lg font-semibold tracking-tight; }
-  h3 { @apply text-base font-semibold; }
+  h1, h2, h3, h4 { @apply tracking-tight font-semibold text-text-primary; }
+  h1 { @apply text-2xl; }
+  h2 { @apply text-xl; }
+  h3 { @apply text-lg; }
+  
+  /* Form resets for consistent design */
+  input[type="text"], input[type="email"], input[type="password"], input[type="number"], input[type="date"], select, textarea {
+    @apply rounded-control border border-border bg-surface px-3 py-2.5 text-sm 
+           focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500
+           transition-all duration-200 placeholder:text-text-muted;
+  }
 }
 
 @layer components {
-  /* Reusable card surface used across every module */
+  /* Premium Card with subtle elevation */
   .card {
-    @apply bg-surface border border-border rounded-card shadow-card p-6;
+    @apply bg-surface border border-border rounded-card shadow-card p-6 
+           transition-all duration-300;
+  }
+  .card-interactive {
+    @apply card hover:shadow-card-hover hover:-translate-y-1 cursor-pointer;
   }
 
-  /* Primary button — used for the single most important action on a screen */
+  /* Elegant Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-control px-4 py-2.5 
+           text-sm font-semibold transition-all duration-200 active:scale-[0.98] 
+           disabled:opacity-50 disabled:pointer-events-none;
+  }
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-control bg-primary-500
-           px-4 py-2.5 text-sm font-medium text-white transition-colors
-           hover:bg-primary-600 disabled:opacity-50 disabled:pointer-events-none;
+    @apply btn bg-navy-500 text-white shadow-sm hover:bg-navy-600 hover:shadow-md;
   }
-
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-control border border-border
-           bg-surface px-4 py-2.5 text-sm font-medium text-text-primary transition-colors
-           hover:bg-primary-50 disabled:opacity-50 disabled:pointer-events-none;
+    @apply btn bg-surface border border-border text-text-primary hover:bg-bg hover:border-slate-300 shadow-sm;
+  }
+  .btn-gold {
+    @apply btn bg-gold-500 text-white shadow-sm hover:bg-gold-600 hover:shadow-md;
+  }
+  .btn-teal {
+    @apply btn bg-teal-500 text-white shadow-sm hover:bg-teal-600 hover:shadow-md;
+  }
+  .btn-danger {
+    @apply btn bg-danger text-white shadow-sm hover:bg-red-700 hover:shadow-md;
   }
 
-  .kpi-value {
-    @apply text-3xl font-semibold tracking-tight text-text-primary;
-  }
-
+  /* Refined Badges */
   .badge {
-    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center gap-1.5 rounded-pill px-3 py-1 text-[11px] font-bold uppercase tracking-wider;
   }
-  .badge-available   { @apply badge bg-primary-50 text-primary-700; }
-  .badge-occupied    { @apply badge bg-champagne-50 text-champagne-500; }
-  .badge-maintenance { @apply badge bg-danger/10 text-danger; }
-  .badge-cleaning    { @apply badge bg-info/10 text-info; }
+  .badge-success { @apply badge bg-success-bg text-success-text border border-success/10; }
+  .badge-warning { @apply badge bg-warning-bg text-warning-text border border-warning/10; }
+  .badge-danger  { @apply badge bg-danger-bg text-danger-text border border-danger/10; }
+  .badge-info    { @apply badge bg-info-bg text-info-text border border-info/10; }
+
+  /* Room specific badges */
+  .badge-available   { @apply badge-info; }
+  .badge-occupied    { @apply badge-warning; }
+  .badge-maintenance { @apply badge-danger; }
+  .badge-cleaning    { @apply badge-info opacity-70; }
+
+  /* Table styles */
+  .table-container {
+    @apply card p-0 overflow-hidden;
+  }
+  .premium-table {
+    @apply w-full text-left border-collapse;
+  }
+  .premium-table th {
+    @apply py-4 px-4 text-[11px] font-bold text-text-muted uppercase tracking-widest bg-bg/50 border-b border-border;
+  }
+  .premium-table td {
+    @apply py-4 px-4 text-sm border-b border-border/50 text-text-primary;
+  }
+  .premium-table tr:last-child td {
+    @apply border-b-0;
+  }
+  .premium-table tr {
+    @apply transition-colors duration-150;
+  }
+  .premium-table tbody tr:hover {
+    @apply bg-bg/30;
+  }
+
+  /* Dashboard Stat Cards */
+  .stat-card {
+    @apply card flex flex-col gap-1;
+  }
+  .stat-label {
+    @apply text-xs font-bold text-text-muted uppercase tracking-wider;
+  }
+  .stat-value {
+    @apply text-2xl font-bold tracking-tight text-navy-500;
+  }
+  .stat-note {
+    @apply text-[11px] text-text-secondary mt-1;
+  }
+}
+
+/* Animations */
+@keyframes slide-in-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-up {
+  animation: slide-in-up 0.4s ease-out forwards;
 }
