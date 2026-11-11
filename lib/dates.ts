@@ -44,3 +44,23 @@ export const HOTEL_TIMEZONE = "Africa/Nairobi";
 export function formatDisplayDate(value: Date | string, locale?: string): string {
   return new Date(value).toLocaleDateString(locale, { timeZone: HOTEL_TIMEZONE });
 }
+
+/** The standard hotel checkout time (24h format). */
+export const STANDARD_CHECKOUT_TIME = "10:00";
+
+/** Returns the checkout deadline for a given date. */
+export function getCheckoutDeadline(date: Date | string): Date {
+  const deadline = new Date(date);
+  const [hours, minutes] = STANDARD_CHECKOUT_TIME.split(":").map(Number);
+  // Business dates are typically at 00:00 UTC/Local. We set it to 10:00 AM in the hotel timezone.
+  // Note: Date handling in JS is tricky with timezones. We assume the 'date' passed is the target checkout day.
+  deadline.setHours(hours, minutes, 0, 0);
+  return deadline;
+}
+
+/** True if the guest is past the checkout deadline by the given grace period in minutes. */
+export function isOverdue(checkOutDate: Date | string, graceMinutes = 30): boolean {
+  const deadline = getCheckoutDeadline(checkOutDate);
+  const overdueTime = new Date(deadline.getTime() + graceMinutes * 60 * 1000);
+  return new Date() > overdueTime;
+}

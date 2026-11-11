@@ -4,6 +4,7 @@ import FrontDeskClient from "@/components/frontdesk/FrontDeskClient";
 import { requirePageRole } from "@/lib/page-auth";
 import { ROLE_GROUPS } from "@/lib/permissions";
 import { isBookableToday } from "@/lib/room-status";
+import { getCheckoutDeadline, isOverdue } from "@/lib/dates";
 import {
   accommodationRequired,
   folioTotals,
@@ -59,12 +60,17 @@ function serializeReservation(reservation: FrontDeskReservation) {
         return { required, paid: 0, balance: required };
       })();
 
+  const deadline = getCheckoutDeadline(reservation.checkOutDate);
+  const overdue = reservation.status === "CHECKED_IN" && isOverdue(reservation.checkOutDate);
+
   return {
     id: reservation.id,
     code: reservation.code,
     guestName: reservation.guest.fullName,
     checkInDate: reservation.checkInDate.toISOString(),
     checkOutDate: reservation.checkOutDate.toISOString(),
+    checkoutDeadline: deadline.toISOString(),
+    isOverdue: overdue,
     roomId: reservation.rooms[0]?.room.id ?? "",
     roomNumbers: reservation.rooms.map((room) => room.room.number).join(", "),
     openFolioId: openFolio?.id ?? null,
@@ -99,8 +105,6 @@ export default async function FrontDeskPage() {
     }),
     prisma.room.findMany({
       relationLoadStrategy: "join",
-      // Retired rooms keep their history but are not part of the rooms a guest
-      // can be given, so they never appear on the board.
       where: { isActive: true },
       include: { roomType: true },
       orderBy: { number: "asc" },
@@ -113,9 +117,11 @@ export default async function FrontDeskPage() {
       reservation.checkInDate >= todayStart &&
       reservation.checkInDate < todayEnd
   );
+
   const inHouse = reservations.filter(
     (reservation) => reservation.status === "CHECKED_IN"
   );
+
   const departures = inHouse
     .filter(
       (reservation) =>

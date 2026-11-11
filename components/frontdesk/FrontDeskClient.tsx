@@ -26,6 +26,8 @@ type ResRow = {
   guestName: string;
   checkInDate: string;
   checkOutDate: string;
+  checkoutDeadline?: string;
+  isOverdue?: boolean;
   roomId: string;
   roomNumbers: string;
   openFolioId: string | null;
@@ -199,9 +201,16 @@ export default function FrontDeskClient({
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-semibold truncate">{r.guestName}</p>
-                    <p className="text-xs text-text-secondary mt-1">
-                      Room {r.roomNumbers} <span className="mx-1">·</span> {r.code}
-                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <p className="text-xs text-text-secondary">
+                        Room {r.roomNumbers} <span className="mx-1">·</span> {r.code}
+                      </p>
+                      {r.checkoutDeadline && (
+                        <p className="text-[10px] text-text-muted bg-bg px-1.5 py-0.5 rounded border border-border">
+                          Ends {new Date(r.checkoutDeadline).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      )}
+                    </div>
                   </div>
                   <span className="shrink-0 rounded-full bg-primary-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-primary-700">
                     Arrival
@@ -255,15 +264,28 @@ export default function FrontDeskClient({
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-semibold truncate">{r.guestName}</p>
-                    <p className="text-xs text-text-secondary mt-1">
-                      Room {r.roomNumbers} <span className="mx-1">·</span> {r.code}
-                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <p className="text-xs text-text-secondary">
+                        Room {r.roomNumbers} <span className="mx-1">·</span> {r.code}
+                      </p>
+                      {r.checkoutDeadline && (
+                        <p className="text-[10px] text-text-muted bg-bg px-1.5 py-0.5 rounded border border-border">
+                          Ends {new Date(r.checkoutDeadline).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      )}
+                    </div>
                   </div>
                   <span className="shrink-0 rounded-full bg-champagne-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-champagne-500">
                     Departure
                   </span>
                 </div>
 
+                {r.isOverdue && (
+                  <div className="mt-3 flex items-center gap-2 rounded-xl bg-danger/10 border border-danger/20 p-2.5 text-danger animate-pulse">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-danger text-white text-[10px] font-bold">!</span>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider">Checkout Overdue</p>
+                  </div>
+                )}
                 <div className="mt-3 grid grid-cols-3 gap-2 rounded-control bg-surface px-3 py-2 text-xs">
                   <div>
                     <p className="text-text-muted">Required</p>
