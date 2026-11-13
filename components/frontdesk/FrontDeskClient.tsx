@@ -91,6 +91,8 @@ export default function FrontDeskClient({
     window.location.reload();
   };
 
+  const EmptyIcon = TAB_ICONS[activeTab];
+
   const getEmptyMessage = () => {
     if (activeTab === "inHouse") return "in-house guests";
     if (activeTab === "arrivals") return "arrivals";
@@ -268,7 +270,7 @@ export default function FrontDeskClient({
         {activeList.length === 0 && (
           <div className="col-span-full card py-16 flex flex-col items-center justify-center border-dashed border-2 opacity-50 bg-transparent">
              <div className="p-4 rounded-full bg-bg mb-4">
-                <TAB_ICONS[activeTab] size={40} className="text-text-muted" />
+                <EmptyIcon size={40} className="text-text-muted" />
              </div>
              <p className="font-bold text-text-primary">No guests found</p>
              <p className="text-sm text-text-secondary mt-1">There are no {getEmptyMessage()} scheduled.</p>
