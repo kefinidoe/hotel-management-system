@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import RoomsClient from "@/components/rooms/RoomsClient";
 import { requirePageRole } from "@/lib/page-auth";
-import { hasRole, ROLE_GROUPS } from "@/lib/permissions";
+import { ROLE_GROUPS } from "@/lib/permissions";
 
 export const dynamic = 'force-dynamic';
 
@@ -39,7 +39,7 @@ export default async function RoomsPage() {
     <RoomsClient
       initialRooms={initialRooms}
       initialRoomTypes={initialRoomTypes}
-      canManage={hasRole(session.user.role, ROLE_GROUPS.MANAGEMENT)}
+      currentUserRole={session.user.role}
     />
   );
 }

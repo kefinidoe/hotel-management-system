@@ -10,7 +10,7 @@ import {
   AlertCircle 
 } from "lucide-react";
 import clsx from "clsx";
-import type { RoleName } from "@prisma/client";
+import type { RoleName, RoomStatus } from "@prisma/client";
 import { hasRole, ROLE_GROUPS } from "@/lib/permissions";
 import CreateReservationModal from "@/components/reservations/CreateReservationModal";
 import CheckInModal from "@/components/frontdesk/CheckInModal";
@@ -38,7 +38,7 @@ type RoomRow = {
   id: string;
   number: string;
   floor: string | null;
-  status: string;
+  status: RoomStatus;
   roomTypeName: string;
   baseRate: number;
 };
