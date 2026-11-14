@@ -150,6 +150,24 @@ const STATUS_BADGE: Record<string, string> = {
 export default function ReportsClient({ initialData }: { initialData: ReportData }) {
   const [data, setData] = useState(initialData);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  async function downloadReport(format: "excel" | "pdf") {
+    if (!data || exporting) return;
+    setExportError(null);
+    setExporting(format);
+    try {
+      const exporter = await import("@/lib/report-export");
+      if (format === "excel") exporter.downloadReportsExcel(data);
+      else await exporter.downloadReportsPdf(data);
+    } catch (err) {
+      console.error(err);
+      setExportError(`Could not create the ${format === "excel" ? "Excel" : "PDF"} report.`);
+    } finally {
+      setExporting(null);
+    }
+  }
 
   const formatMoney = (val: number) => 
     `KSh ${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -169,16 +187,33 @@ export default function ReportsClient({ initialData }: { initialData: ReportData
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn-secondary">
-             <FileSpreadsheet size={18} className="text-success" />
-             Export Excel
+          <button
+            type="button"
+            onClick={() => downloadReport("excel")}
+            disabled={exporting !== null}
+            className="btn-secondary hover:bg-teal-50 hover:border-teal-200 hover:text-teal-700"
+          >
+            <FileSpreadsheet size={18} className="text-success" />
+            {exporting === "excel" ? "Exporting Excel..." : "Export Excel"}
           </button>
-          <button className="btn-secondary">
-             <FileText size={18} className="text-navy-500" />
-             Export PDF
+          <button
+            type="button"
+            onClick={() => downloadReport("pdf")}
+            disabled={exporting !== null}
+            className="btn-secondary hover:bg-navy-50 hover:border-navy-200 hover:text-navy-700"
+          >
+            <FileText size={18} className="text-navy-500" />
+            {exporting === "pdf" ? "Exporting PDF..." : "Export PDF"}
           </button>
         </div>
       </div>
+
+      {exportError && (
+        <div className="bg-danger-bg border border-danger/20 p-4 rounded-xl flex items-center gap-3 text-danger shadow-sm">
+          <AlertCircle size={18} />
+          <p className="text-sm font-bold">{exportError}</p>
+        </div>
+      )}
 
       <div className="bg-white rounded-2xl border border-border shadow-sm p-1.5 flex gap-1 w-full max-w-2xl">
         {[

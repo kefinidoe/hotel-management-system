@@ -25,7 +25,7 @@ type ActivityItem = {
 const money = (n: number) => `KSh ${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
 function inputClass() {
-  return "w-full rounded-xl border border-border bg-surface px-4 py-3 text-sm shadow-sm transition-all placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400";
+  return "w-full rounded-xl border border-border bg-surface px-4 py-3 text-sm shadow-sm transition-all placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500";
 }
 
 export default function RestaurantClient({
@@ -162,7 +162,7 @@ export default function RestaurantClient({
           </p>
         </div>
         {canManageMenu && (
-          <button onClick={() => setManageOpen(true)} className="btn-secondary rounded-xl shadow-sm hover:shadow-md transition-all">
+          <button onClick={() => setManageOpen(true)} className="btn-secondary rounded-xl shadow-sm hover:bg-navy-50 hover:border-navy-200 hover:text-navy-700 hover:shadow-md transition-all">
             <Settings2 size={16} /> Manage Menu
           </button>
         )}
@@ -178,8 +178,8 @@ export default function RestaurantClient({
                 className={clsx(
                   "rounded-xl px-5 py-2.5 text-sm font-semibold border transition-all duration-200",
                   activeCategory === c.id
-                    ? "bg-primary-700 border-primary-700 text-white shadow-md shadow-primary-500/15"
-                    : "bg-transparent border-transparent text-text-secondary hover:bg-primary-50 hover:border-primary-200 hover:text-primary-700"
+                    ? "bg-navy-500 border-navy-500 text-white shadow-md"
+                    : "bg-transparent border-transparent text-text-secondary hover:bg-teal-50 hover:border-teal-200 hover:text-teal-700"
                 )}
               >
                 {c.name}
@@ -199,11 +199,11 @@ export default function RestaurantClient({
                     "group relative overflow-hidden rounded-2xl border border-border bg-surface p-5 text-left shadow-sm transition-all duration-200",
                     soldOut
                       ? "opacity-40 cursor-not-allowed"
-                      : "hover:border-primary-300"
+                      : "hover:border-teal-400 hover:bg-teal-50/40 hover:shadow-md hover:-translate-y-0.5 active:scale-[0.99]"
                   )}
                 >
-                  <p className="font-semibold leading-snug">{item.name}</p>
-                  <p className="text-sm text-text-secondary mt-1">{money(item.price)}</p>
+                  <p className="font-semibold leading-snug text-text-primary group-hover:text-navy-600 transition-colors">{item.name}</p>
+                  <p className="text-sm font-semibold text-teal-700 mt-1">{money(item.price)}</p>
                   {soldOut && <p className="text-xs text-danger mt-1">Sold out</p>}
                 </button>
               );
@@ -236,7 +236,7 @@ export default function RestaurantClient({
                     </div>
                     <button
                       onClick={() => changeQty(l.menuItemId, -1)}
-                      className="rounded-lg border border-border bg-surface p-1.5 shadow-sm transition-colors hover:bg-bg"
+                      className="rounded-lg border border-border bg-surface p-1.5 shadow-sm transition-colors hover:bg-teal-50 hover:border-teal-300 hover:text-teal-700"
                       aria-label={`Reduce ${l.name}`}
                     >
                       <Minus size={14} />
@@ -244,7 +244,7 @@ export default function RestaurantClient({
                     <span className="w-6 text-center font-medium">{l.quantity}</span>
                     <button
                       onClick={() => changeQty(l.menuItemId, 1)}
-                      className="rounded-lg border border-border bg-surface p-1.5 shadow-sm transition-colors hover:bg-bg"
+                      className="rounded-lg border border-border bg-surface p-1.5 shadow-sm transition-colors hover:bg-teal-50 hover:border-teal-300 hover:text-teal-700"
                       aria-label={`Add another ${l.name}`}
                     >
                       <Plus size={14} />
@@ -282,8 +282,8 @@ export default function RestaurantClient({
                 className={clsx(
                   "rounded-lg px-3 py-3 text-sm font-semibold border transition-all duration-200",
                   mode === "ROOM"
-                    ? "bg-primary-700 border-primary-700 text-white shadow-md shadow-primary-500/15"
-                    : "bg-transparent border-transparent text-text-secondary hover:bg-primary-50 hover:border-primary-200 hover:text-primary-700"
+                    ? "bg-teal-600 border-teal-600 text-white shadow-md"
+                    : "bg-transparent border-transparent text-text-secondary hover:bg-navy-50 hover:border-navy-200 hover:text-navy-700"
                 )}
               >
                 Charge to Room
@@ -293,8 +293,8 @@ export default function RestaurantClient({
                 className={clsx(
                   "rounded-lg px-3 py-3 text-sm font-semibold border transition-all duration-200",
                   mode === "PAY"
-                    ? "bg-primary-700 border-primary-700 text-white shadow-md shadow-primary-500/15"
-                    : "bg-transparent border-transparent text-text-secondary hover:bg-primary-50 hover:border-primary-200 hover:text-primary-700"
+                    ? "bg-teal-600 border-teal-600 text-white shadow-md"
+                    : "bg-transparent border-transparent text-text-secondary hover:bg-navy-50 hover:border-navy-200 hover:text-navy-700"
                 )}
               >
                 Pay Now
@@ -415,7 +415,7 @@ export default function RestaurantClient({
                   </div>
                   <div className="text-right shrink-0">
                     <p className="font-medium">{money(a.total)}</p>
-                    <p className={clsx("text-xs", a.settled ? "text-success" : "text-champagne-500")}>
+                    <p className={clsx("text-xs", a.settled ? "text-success" : "text-gold-600 font-medium")}>
                       {a.settled ? "Paid" : "On folio"}
                     </p>
                   </div>
@@ -605,7 +605,7 @@ function ManageMenuModal({ menu, onClose }: { menu: Category[]; onClose: () => v
                   </p>
                 </div>
                 {required ? (
-                  <span className="badge bg-primary-50 text-primary-700">Required</span>
+                  <span className="badge bg-navy-50 text-navy-700">Required</span>
                 ) : (
                   <button
                     type="button"
